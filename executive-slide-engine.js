@@ -15,7 +15,7 @@
 
     const ENGINE_NAME = 'ExecutiveSlideEngine';
     const ENGINE_VERSION = '1.4.3-i18n';
-    const ENGINE_BASE = 'https://zarubinscky.github.io/meetmind-pdf-engine/';
+    const ENGINE_BASE = 'https://meetmind-app.github.io/meetmind-pdf-engine/';
     const CACHE_VERSION = 'golden-1.4.3-i18n';
 
     const PDF_LIB_CDN =
