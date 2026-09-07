@@ -16,7 +16,12 @@
             : String(value).replace(/\s+/g, ' ').trim();
     }
 
-    function haystack(metric) {
+    function primaryText(metric) {
+        return [metric?.label, metric?.title, metric?.name]
+            .map(clean).filter(Boolean).join(' ').toLowerCase();
+    }
+
+    function allText(metric) {
         return [
             metric?.label,
             metric?.title,
@@ -31,50 +36,52 @@
         return patterns.some(pattern => text.includes(pattern));
     }
 
+    const PATTERNS = Object.freeze({
+        target: Object.freeze(['target', 'goal', 'objective', 'цель', 'целев', 'план', 'quota', 'квота']),
+        time: Object.freeze(['t2v', 'time', 'duration', 'minute', 'hour', 'day', 'latency', 'sla', 'время', 'мин', 'час', 'день', 'срок', 'скорост']),
+        people: Object.freeze(['user', 'customer', 'client', 'participant', 'mau', 'dau', 'wau', 'subscriber', 'пользоват', 'клиент', 'участник', 'подписчик', 'аудитори']),
+        growth: Object.freeze(['revenue', 'arr', 'mrr', 'gmv', 'sales', 'income', 'turnover', 'выруч', 'доход', 'оборот', 'продаж']),
+        rate: Object.freeze(['conversion', 'rate', 'share', 'percent', '%', 'конверс', 'доля', 'процент']),
+        economics: Object.freeze(['cost', 'cogs', 'price', 'margin', 'budget', 'expense', 'стоим', 'затрат', 'марж', 'бюджет', 'цена']),
+        system: Object.freeze(['api', 'integration', 'network', 'channel', 'pipeline', 'интеграц', 'канал', 'сеть', 'пайплайн']),
+        risk: Object.freeze(['risk', 'error', 'failure', 'incident', 'churn', 'defect', 'риск', 'ошиб', 'сбой', 'инцидент', 'отток', 'дефект'])
+    });
+
+    function result(name, color, semantic) {
+        return Object.freeze({ name, color, semantic });
+    }
+
     function resolveMetric(metric) {
-        const text = haystack(metric);
+        const primary = primaryText(metric);
+        const text = allText(metric);
         const relation = clean(metric?.relation).toLowerCase();
 
-        if (
-            relation === 'target' || relation === 'current_to_target' ||
-            includesAny(text, ['target', 'goal', 'objective', 'цель', 'целев', 'план', 'quota', 'квота'])
-        ) return Object.freeze({ name: 'target', color: 'purplePrimary', semantic: 'target' });
+        if (relation === 'target' || relation === 'current_to_target') {
+            return result('target', 'purplePrimary', 'target');
+        }
 
-        if (includesAny(text, [
-            't2v', 'time', 'duration', 'minute', 'hour', 'day', 'latency', 'sla',
-            'время', 'мин', 'час', 'день', 'срок', 'скорост'
-        ])) return Object.freeze({ name: 'clock-3', color: 'purplePrimary', semantic: 'time' });
+        // Strongest signal is the metric's own name/label. This prevents a COGS
+        // metric such as "< 20% revenue" from being misclassified as revenue.
+        if (includesAny(primary, PATTERNS.economics)) return result('boxes', 'orangeRisk', 'economics');
+        if (includesAny(primary, PATTERNS.time)) return result('clock-3', 'purplePrimary', 'time');
+        if (includesAny(primary, PATTERNS.people)) return result('users-round', 'purplePrimary', 'people');
+        if (includesAny(primary, PATTERNS.growth)) return result('chart-column', 'greenSuccess', 'growth');
+        if (includesAny(primary, PATTERNS.rate)) return result('target', 'greenSuccess', 'rate');
+        if (includesAny(primary, PATTERNS.system)) return result('network', 'purplePrimary', 'system');
+        if (includesAny(primary, PATTERNS.risk)) return result('triangle-alert', 'orangeRisk', 'risk');
+        if (includesAny(primary, PATTERNS.target)) return result('target', 'purplePrimary', 'target');
 
-        if (includesAny(text, [
-            'user', 'customer', 'client', 'participant', 'mau', 'dau', 'wau', 'subscriber',
-            'пользоват', 'клиент', 'участник', 'подписчик', 'аудитори'
-        ])) return Object.freeze({ name: 'users-round', color: 'purplePrimary', semantic: 'people' });
+        // Context/value is a weaker fallback only when the label itself is generic.
+        if (includesAny(text, PATTERNS.time)) return result('clock-3', 'purplePrimary', 'time');
+        if (includesAny(text, PATTERNS.people)) return result('users-round', 'purplePrimary', 'people');
+        if (includesAny(text, PATTERNS.economics)) return result('boxes', 'orangeRisk', 'economics');
+        if (includesAny(text, PATTERNS.growth)) return result('chart-column', 'greenSuccess', 'growth');
+        if (includesAny(text, PATTERNS.rate)) return result('target', 'greenSuccess', 'rate');
+        if (includesAny(text, PATTERNS.system)) return result('network', 'purplePrimary', 'system');
+        if (includesAny(text, PATTERNS.risk)) return result('triangle-alert', 'orangeRisk', 'risk');
+        if (includesAny(text, PATTERNS.target)) return result('target', 'purplePrimary', 'target');
 
-        if (includesAny(text, [
-            'revenue', 'arr', 'mrr', 'gmv', 'sales', 'income', 'turnover',
-            'выруч', 'доход', 'оборот', 'продаж'
-        ])) return Object.freeze({ name: 'chart-column', color: 'greenSuccess', semantic: 'growth' });
-
-        if (includesAny(text, [
-            'conversion', 'rate', 'share', 'percent', '%', 'конверс', 'доля', 'процент'
-        ])) return Object.freeze({ name: 'target', color: 'greenSuccess', semantic: 'rate' });
-
-        if (includesAny(text, [
-            'cost', 'cogs', 'price', 'margin', 'budget', 'expense',
-            'стоим', 'затрат', 'марж', 'бюджет', 'цена'
-        ])) return Object.freeze({ name: 'boxes', color: 'orangeRisk', semantic: 'economics' });
-
-        if (includesAny(text, [
-            'api', 'integration', 'network', 'channel', 'pipeline',
-            'интеграц', 'канал', 'сеть', 'пайплайн'
-        ])) return Object.freeze({ name: 'network', color: 'purplePrimary', semantic: 'system' });
-
-        if (includesAny(text, [
-            'risk', 'error', 'failure', 'incident', 'churn', 'defect',
-            'риск', 'ошиб', 'сбой', 'инцидент', 'отток', 'дефект'
-        ])) return Object.freeze({ name: 'triangle-alert', color: 'orangeRisk', semantic: 'risk' });
-
-        return Object.freeze({ name: 'file-text', color: 'purplePrimary', semantic: 'generic' });
+        return result('file-text', 'purplePrimary', 'generic');
     }
 
     const SECTION = Object.freeze({
@@ -120,7 +127,7 @@
     }
 
     host.semanticIcons = Object.freeze({
-        version: '2.0.0',
+        version: '2.0.1',
         resolveMetric,
         section,
         meetingType
