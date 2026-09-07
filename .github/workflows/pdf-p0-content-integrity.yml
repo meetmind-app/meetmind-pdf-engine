@@ -33,3 +33,6 @@ jobs:
 
       - name: Run sparse page packing regression
         run: node Tests/page-packing-extension.test.js
+
+      - name: Run canonical report contract v1.1 regression
+        run: node Tests/report-contract-v1.1.test.js
