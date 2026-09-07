@@ -48,3 +48,6 @@ jobs:
 
       - name: Run Meeting Type v1 regression
         run: node Tests/meeting-type-v1.test.js
+
+      - name: Run Semantic Icons v2 regression
+        run: node Tests/semantic-icons-v2.test.js
