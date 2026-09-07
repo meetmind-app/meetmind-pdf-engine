@@ -1,8 +1,15 @@
 const d = $input.first().json;
 
 const SUPPORTED_LANGUAGES = ['ru','en','es','pt','tr','id','hi','ar','uz','fa'];
+function normalizeTelegramLanguage(value){
+  const raw=String(value||'en').trim().replace(/_/g,'-').toLowerCase();
+  if(raw==='pt'||raw==='pt-br'||raw.startsWith('pt-'))return 'pt';
+  if(raw==='in'||raw.startsWith('in-'))return 'id';
+  const base=raw.split('-')[0];
+  return SUPPORTED_LANGUAGES.includes(base)?base:'en';
+}
 const rawLanguage = d.report_language || d.meeting_language || d.language || d.report_json?.language || 'en';
-const lang = SUPPORTED_LANGUAGES.includes(rawLanguage) ? rawLanguage : 'en';
+const lang = normalizeTelegramLanguage(rawLanguage);
 
 const i18n = {
   ru:{executive_brief:'Краткое резюме',key_metrics:'Ключевые метрики',key_takeaways:'Основные выводы',decisions:'Решения',tasks:'Задачи',risks:'Риски',architecture:'Архитектура и процесс',owners:'Владельцы',impact:'Влияние',mitigation:'Меры',open_report:'📊 Открыть отчёт',share_report:'↗️ Поделиться',full_details:'Полная версия — в Web Report'},
