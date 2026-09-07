@@ -55,11 +55,11 @@ assert.strictEqual(noDuration.report_json.stats.duration_seconds, null);
 assert.strictEqual(noDuration.report_json.language, 'ru');
 
 const ptBr = run({ meeting_title: 'Brasil' }, 'pt-BR', 60);
-assert.strictEqual(ptBr.report_language, 'pt-BR', 'pt-BR must remain the canonical Portuguese report code.');
-assert.strictEqual(ptBr.report_json.language, 'pt-BR');
+assert.strictEqual(ptBr.report_language, 'pt', 'pt-BR input must use the stable persisted Portuguese key.');
+assert.strictEqual(ptBr.report_json.language, 'pt');
 
 const ptAlias = run({ meeting_title: 'Brasil alias' }, 'pt', 60);
-assert.strictEqual(ptAlias.report_json.language, 'pt-BR', 'pt alias must normalize to canonical pt-BR.');
+assert.strictEqual(ptAlias.report_json.language, 'pt', 'pt alias must remain the stable persisted Portuguese key.');
 
 const indonesiaAlias = run({ meeting_title: 'Indonesia alias' }, 'in-ID', 60);
 assert.strictEqual(indonesiaAlias.report_json.language, 'id', 'Legacy Indonesian locale alias must normalize to id.');
