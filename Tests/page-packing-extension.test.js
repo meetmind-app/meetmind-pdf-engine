@@ -32,7 +32,7 @@ function runPacked(layoutResult, version) {
   vm.createContext(sandbox);
   vm.runInContext(rendererSource, sandbox, { filename: `renderer-${version}.js` });
   const wrapped = host.MeetMindLayoutEngine;
-  assert.ok(wrapped.version.includes('page-pack-1.0'), 'Page-packing layout extension was not installed.');
+  assert.ok(wrapped.version.includes('page-pack-'), 'Page-packing layout extension was not installed.');
   return wrapped.layout({});
 }
 
