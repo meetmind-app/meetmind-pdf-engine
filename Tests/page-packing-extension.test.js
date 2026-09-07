@@ -17,6 +17,25 @@ function block(id, x, y, width, height, layout = {}) {
   };
 }
 
+function runPacked(layoutResult, version) {
+  const host = {
+    MeetMindLayoutEngine: Object.freeze({
+      version,
+      layout() { return layoutResult; }
+    })
+  };
+  const sandbox = {
+    window: host,
+    globalThis: host,
+    module: { exports: {} }
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(rendererSource, sandbox, { filename: `renderer-${version}.js` });
+  const wrapped = host.MeetMindLayoutEngine;
+  assert.ok(wrapped.version.includes('page-pack-1.0'), 'Page-packing layout extension was not installed.');
+  return wrapped.layout({});
+}
+
 const originalResult = {
   pageCount: 1,
   valid: true,
@@ -37,23 +56,7 @@ const originalResult = {
   }]
 };
 
-const sandbox = {
-  window: {
-    MeetMindLayoutEngine: Object.freeze({
-      version: 'test-layout',
-      layout() { return originalResult; }
-    })
-  },
-  globalThis: null,
-  module: { exports: {} }
-};
-sandbox.globalThis = sandbox.window;
-vm.createContext(sandbox);
-vm.runInContext(rendererSource, sandbox, { filename: 'renderer.js' });
-
-const wrapped = sandbox.window.MeetMindLayoutEngine;
-assert.ok(wrapped.version.includes('page-pack-1.0'), 'Page-packing layout extension was not installed.');
-const result = wrapped.layout({});
+const result = runPacked(originalResult, 'test-layout');
 assert.ok(result.pagePackingApplied, 'Sparse page did not report page packing.');
 
 const page = result.pages[0];
@@ -84,13 +87,8 @@ const tightResult = {
     })
   }]
 };
-sandbox.window.MeetMindLayoutEngine = Object.freeze({
-  version: 'test-layout-2',
-  layout() { return tightResult; }
-});
-// Re-evaluate to install the wrapper over the replacement test engine.
-vm.runInContext(rendererSource, sandbox, { filename: 'renderer.js#2' });
-const tight = sandbox.window.MeetMindLayoutEngine.layout({});
+
+const tight = runPacked(tightResult, 'test-layout-2');
 const tightPage = tight.pages[0];
 const tightTasks = tightPage.blocks.find(b => b.id === 'tasks');
 const tightArch = tightPage.blocks.find(b => b.id === 'architecture');
