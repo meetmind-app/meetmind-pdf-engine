@@ -1,0 +1,65 @@
+{
+  "id": "EN_ASYMMETRIC_001",
+  "language": "en",
+  "title": "Enterprise AI Operating Model Review",
+  "summary": "The team aligned on a narrow initial operating model and agreed to keep the executive report concise. The primary constraint is not data volume but uneven content density across sections.",
+  "metrics": [
+    { "label": "Annual savings target", "value": "$12.5M" },
+    { "label": "Pilot teams", "value": "6" },
+    { "label": "Automation rate", "value": "34% → 70%" },
+    { "label": "Decision SLA", "value": "5 days → 24 hours" },
+    { "label": "Target adoption", "value": "80% of managers" }
+  ],
+  "insights": [
+    {
+      "title": "Governance is the dominant constraint",
+      "description": "The organization has enough technical capability to launch the first use cases, but ownership, approval boundaries, exception handling, auditability, and escalation rules remain fragmented across several functions. Without a single operating model, teams are likely to create duplicate controls and slow down execution even when the underlying AI capability is ready. The recommended next step is to define one accountable owner, one approved policy layer, and a small number of measurable control points before expanding the use-case portfolio."
+    },
+    { "title": "Adoption should be measured by completed work", "description": "Usage counts alone will not prove operational value." },
+    { "title": "Keep the first portfolio narrow", "description": "A small number of high-frequency workflows will produce cleaner evidence than a broad catalogue." }
+  ],
+  "decisions": [
+    { "title": "Create one governance layer", "description": "Centralize policy, audit and escalation rules." },
+    { "title": "Launch with six teams", "description": "Use the first cohort as a controlled operational benchmark." }
+  ],
+  "risks": [
+    { "title": "Control fragmentation", "description": "Parallel approval models may recreate manual bottlenecks." }
+  ],
+  "tasks": [
+    { "task": "Define the accountable owner and approval boundaries for the pilot", "owner": "COO Office", "due_date": "within 10 business days" },
+    { "task": "Publish baseline metrics and the first operational scorecard", "owner": "Transformation PMO", "due_date": "before pilot kickoff" }
+  ],
+  "architecture": {
+    "sections": [
+      {
+        "title": "Policy Layer",
+        "layout": "components",
+        "items": [
+          { "title": "Rules", "description": "Approved actions, controls and escalation thresholds." },
+          { "title": "Audit", "description": "Traceability for model outputs and executed actions." }
+        ]
+      },
+      {
+        "title": "Execution Layer",
+        "layout": "components",
+        "items": [
+          { "title": "Workflows", "description": "High-frequency operational tasks." },
+          { "title": "Agents", "description": "Controlled execution with explicit permissions." }
+        ]
+      },
+      {
+        "title": "Measurement",
+        "layout": "components",
+        "items": [
+          { "title": "Scorecard", "description": "Time, quality, adoption and financial impact." }
+        ]
+      }
+    ]
+  },
+  "owners": [
+    { "name": "COO Office", "responsibility": "Governance and operating model" },
+    { "name": "Transformation PMO", "responsibility": "Pilot delivery and metrics" }
+  ],
+  "participants": ["COO Office", "Transformation PMO", "AI Platform"],
+  "stats": {}
+}
