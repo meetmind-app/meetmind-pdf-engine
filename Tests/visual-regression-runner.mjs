@@ -42,15 +42,6 @@ function safeLocalPath(urlString) {
   return resolved;
 }
 
-function chunkedBase64(bytes) {
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + chunkSize, bytes.length)));
-  }
-  return btoa(binary);
-}
-
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1536, height: 1024 } });
 
@@ -70,10 +61,7 @@ await page.route('https://meetmind-app.github.io/meetmind-pdf-engine/**', route 
   if (!localPath || !fs.existsSync(localPath) || !fs.statSync(localPath).isFile()) {
     return route.fulfill({ status: 404, body: `Missing local visual-regression asset for ${route.request().url()}` });
   }
-  return route.fulfill({
-    path: localPath,
-    headers: { 'access-control-allow-origin': '*' }
-  });
+  return route.fulfill({ path: localPath });
 });
 
 page.on('pageerror', error => console.error('[browser pageerror]', error));
@@ -113,8 +101,13 @@ for (const [name, fixturePath] of cases) {
         language: reportValue.language || 'en'
       });
       const bytes = new Uint8Array(await blob.arrayBuffer());
+      let binary = '';
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + chunkSize, bytes.length)));
+      }
       return {
-        base64: chunkedBase64(bytes),
+        base64: btoa(binary),
         logs: captured
       };
     } finally {
