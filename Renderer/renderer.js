@@ -14,7 +14,7 @@
     'use strict';
 
     const NAME = 'MeetMindRenderer';
-    const VERSION = '1.0.1-summary-integrity';
+    const VERSION = '1.0.2-p0-integrity';
 
     class RendererError extends Error {
         constructor(code, message, details) {
@@ -195,6 +195,42 @@
         });
     }
 
+    function metricItems(block, report) {
+        const raw = block?.data ?? block?.content ?? block?.items ?? block?.value;
+        if (Array.isArray(raw)) return raw;
+        if (raw && typeof raw === 'object') {
+            for (const key of ['items','metrics','values']) if (Array.isArray(raw[key])) return raw[key];
+        }
+        for (const key of ['metrics','key_metrics','keyMetrics']) if (Array.isArray(report?.[key])) return report[key];
+        return [];
+    }
+
+    function renderMetricsIntegrity(block, ctx) {
+        const g = block.geometry, sp = summarySpacing(ctx), metrics = metricItems(block, ctx.report || {});
+        ctx.rect({x:g.x,y:g.y,width:g.width,height:g.height,fill:'cardBg',stroke:'borderDefault',borderWidth:.5,radius:4});
+        const h = summaryStyle(ctx,'blockTitle',{font:'bold',size:8.2,lineHeight:9.8,color:'textPrimary'});
+        ctx.text('Key Metrics',{x:g.x+sp.padX,y:g.y+sp.padY,size:h.size,font:h.font,color:'purplePrimary'});
+        const y0=g.y+sp.padY+h.lineHeight+sp.titleGap, gap=3, innerW=g.width-sp.padX*2;
+        const cols=metrics.length===5?3:Math.min(4,Math.max(1,metrics.length));
+        const rows=Math.max(1,Math.ceil(metrics.length/cols));
+        const cellW=(innerW-gap*(cols-1))/cols, cellH=(g.y+g.height-sp.padY-y0-gap*(rows-1))/rows;
+        const ls=summaryStyle(ctx,'metricLabel',{font:'semibold',size:5.2,lineHeight:6.2,color:'textSecondary'});
+        const base=summaryStyle(ctx,'metricValue',{font:'bold',size:8.5,lineHeight:9.5,color:'textPrimary'});
+        metrics.forEach((m,i)=>{
+            const row=Math.floor(i/cols), rowCount=Math.min(cols,metrics.length-row*cols);
+            const offset=(cols-rowCount)*(cellW+gap)/2, col=i-row*cols;
+            const x=g.x+sp.padX+offset+col*(cellW+gap), y=y0+row*(cellH+gap);
+            ctx.rect({x,y,width:cellW,height:cellH,fill:'cardBg',stroke:'borderDefault',borderWidth:.5,radius:3});
+            const label=cleanText(m?.label||m?.title||m?.name||''), value=cleanText(m?.value||m?.metric||m?.amount||'—');
+            const labelLines=summaryWrap(ctx,label,cellW-10,ls), labelH=labelLines.length*ls.lineHeight;
+            labelLines.forEach((line,j)=>ctx.text(line,{x:x+5,y:y+4+j*ls.lineHeight,size:ls.size,font:ls.font,color:ls.color}));
+            let vs={...base}, lines=summaryWrap(ctx,value,cellW-10,vs), top=y+6+labelH, avail=y+cellH-3-top;
+            while(vs.size>6.6 && lines.length*vs.lineHeight>avail){vs={...vs,size:vs.size-.4,lineHeight:vs.lineHeight-.4};lines=summaryWrap(ctx,value,cellW-10,vs);}
+            if(lines.length*vs.lineHeight>avail+.5) throw new RendererError('METRIC_LAYOUT_UNDERSIZED','Metric value does not fit allocated geometry.',{index:i,geometry:g});
+            lines.forEach((line,j)=>ctx.text(line,{x:x+5,y:top+j*vs.lineHeight,size:vs.size,font:vs.font,color:vs.color}));
+        });
+    }
+
     function cloneGeometry(block) {
         const source = isObject(block.geometry)
             ? block.geometry
@@ -256,12 +292,20 @@
         if (registry && typeof registry.get === 'function') definition = registry.get(block.id);
         else if (isObject(registry)) definition = registry[block.id] || null;
 
-        if (block.id === 'executiveSummary' || block.id === 'summary') {
-            return renderSummaryIntegrity;
-        }
+        if (block.id === 'executiveSummary' || block.id === 'summary') return renderSummaryIntegrity;
+        if (block.id === 'keyMetrics' || block.id === 'metrics') return renderMetricsIntegrity;
 
         const rendererName = definition?.renderer || block.renderer || block.type || block.id;
         const candidate = renderers?.[rendererName] || renderers?.[block.id];
+        if ((block.id === 'meetingStats' || block.id === 'stats') && typeof candidate === 'function') {
+            return (b, ctx) => {
+                const explicit = b?.data ?? b?.content;
+                if (!explicit || typeof explicit !== 'object' || Array.isArray(explicit)) return candidate(b, ctx);
+                const proxy = Object.create(ctx);
+                proxy.report = {...(ctx.report || {}), stats: explicit};
+                return candidate(b, proxy);
+            };
+        }
 
         if (typeof candidate === 'function') return candidate;
         if (candidate && typeof candidate.render === 'function') return candidate.render.bind(candidate);
