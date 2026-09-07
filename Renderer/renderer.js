@@ -14,7 +14,7 @@
     'use strict';
 
     const NAME = 'MeetMindRenderer';
-    const VERSION = '1.0.2-p0-integrity';
+    const VERSION = '1.0.3-visual-regression';
 
     class RendererError extends Error {
         constructor(code, message, details) {
@@ -40,12 +40,18 @@
             hi: 'एग्जीक्यूटिव सारांश', ar: 'الملخص التنفيذي', uz: 'Ijrochi xulosa',
             fa: 'خلاصه مدیریتی'
         };
+        const metricsTitles = {
+            en: 'Key Metrics', ru: 'Ключевые метрики', es: 'Métricas clave',
+            pt: 'Métricas-chave', tr: 'Temel Metrikler', id: 'Metrik Utama',
+            hi: 'मुख्य मेट्रिक्स', ar: 'المؤشرات الرئيسية', uz: 'Asosiy ko‘rsatkichlar',
+            fa: 'شاخص‌های کلیدی'
+        };
         const raw = String(ctx?.options?.language || ctx?.options?.report_language ||
             ctx?.report?.report_language || ctx?.report?.language || 'en')
             .trim().toLowerCase().replace(/_/g, '-');
         const baseRaw = raw.split('-')[0];
         const base = baseRaw === 'in' ? 'id' : baseRaw;
-        return { code: titles[base] ? base : 'en', titles };
+        return { code: titles[base] ? base : 'en', titles, metricsTitles };
     }
 
     function summaryStyle(ctx, name, fallback) {
@@ -209,7 +215,8 @@
         const g = block.geometry, sp = summarySpacing(ctx), metrics = metricItems(block, ctx.report || {});
         ctx.rect({x:g.x,y:g.y,width:g.width,height:g.height,fill:'cardBg',stroke:'borderDefault',borderWidth:.5,radius:4});
         const h = summaryStyle(ctx,'blockTitle',{font:'bold',size:8.2,lineHeight:9.8,color:'textPrimary'});
-        ctx.text('Key Metrics',{x:g.x+sp.padX,y:g.y+sp.padY,size:h.size,font:h.font,color:'purplePrimary'});
+        const language = summaryLanguage(ctx);
+        ctx.text(language.metricsTitles[language.code],{x:g.x+sp.padX,y:g.y+sp.padY,size:h.size,font:h.font,color:'purplePrimary'});
         const y0=g.y+sp.padY+h.lineHeight+sp.titleGap, gap=3, innerW=g.width-sp.padX*2;
         const cols=metrics.length===5?3:Math.min(4,Math.max(1,metrics.length));
         const rows=Math.max(1,Math.ceil(metrics.length/cols));
@@ -301,8 +308,25 @@
             return (b, ctx) => {
                 const explicit = b?.data ?? b?.content;
                 if (!explicit || typeof explicit !== 'object' || Array.isArray(explicit)) return candidate(b, ctx);
+                const report = ctx.report || {};
+                const fallbackStats = {
+                    participants: Array.isArray(report.participants)
+                        ? report.participants.length
+                        : Number(report.participants_count || 0),
+                    tasks: Array.isArray(report.tasks)
+                        ? report.tasks.length
+                        : Array.isArray(report.action_items)
+                            ? report.action_items.length
+                            : Number(report.tasks_count || 0),
+                    decisions: Array.isArray(report.decisions)
+                        ? report.decisions.length
+                        : Number(report.decisions_count || 0),
+                    risks: Array.isArray(report.risks)
+                        ? report.risks.length
+                        : Number(report.risks_count || 0)
+                };
                 const proxy = Object.create(ctx);
-                proxy.report = {...(ctx.report || {}), stats: explicit};
+                proxy.report = {...report, stats: {...fallbackStats, ...explicit}};
                 return candidate(b, proxy);
             };
         }
