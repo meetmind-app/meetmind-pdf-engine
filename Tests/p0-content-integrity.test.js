@@ -5,11 +5,13 @@ const path = require('path');
 const assert = require('assert');
 
 const repoRoot = path.resolve(__dirname, '..');
-const rendererPath = path.join(repoRoot, 'Renderer', 'renderers', 'block-renderers.js');
+const blockRendererPath = path.join(repoRoot, 'Renderer', 'renderers', 'block-renderers.js');
+const rendererOrchestratorPath = path.join(repoRoot, 'Renderer', 'renderer.js');
 const layoutPath = path.join(repoRoot, 'Layout_Engine', 'layout-engine.js');
 const fixturePath = path.join(__dirname, 'fixtures', 'RU_REAL_001.json');
 
-const rendererSource = fs.readFileSync(rendererPath, 'utf8');
+const blockRendererSource = fs.readFileSync(blockRendererPath, 'utf8');
+const rendererOrchestratorSource = fs.readFileSync(rendererOrchestratorPath, 'utf8');
 const layoutSource = fs.readFileSync(layoutPath, 'utf8');
 const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
 
@@ -29,29 +31,32 @@ assert.strictEqual(fixture.key_metrics.length, 5, 'RU_REAL_001 must keep the 5-m
 assert.strictEqual(fixture.risks.length, 5, 'RU_REAL_001 must keep the 5-risk layout case.');
 assert.ok(fixture.stats.duration_seconds > 0, 'RU_REAL_001 must carry meeting duration for stats regression.');
 
-// Hard content-integrity rule: renderer must never intentionally keep only the first due-date line.
+// Hard content-integrity rule: Tasks renderer must never intentionally keep only the first due-date line.
 assert.ok(
-  !rendererSource.includes('dueLines.slice(0,1)') &&
-  !rendererSource.includes('dueLines.slice(0, 1)'),
+  !blockRendererSource.includes('dueLines.slice(0,1)') &&
+  !blockRendererSource.includes('dueLines.slice(0, 1)'),
   'Renderer still truncates wrapped due dates to one line.'
 );
 
-// Summary measurement and rendering must use the same explicit paragraph boundaries.
-// Sentence-level splitting in the renderer adds spacing that Layout never measured and can silently drop the last sentence.
+// P0 Summary is resolved at the renderer orchestrator boundary so the legacy summary implementation cannot silently truncate.
 assert.ok(
-  !rendererSource.includes('sentences.length>=3?sentences'),
-  'Renderer still converts a single Executive Brief paragraph into sentence paragraphs after Layout measurement.'
+  rendererOrchestratorSource.includes("block.id === 'executiveSummary' || block.id === 'summary'"),
+  'Renderer orchestrator does not route Summary through the content-integrity renderer.'
 );
 
-// Renderer must not silently stop drawing Summary lines at the card boundary.
 assert.ok(
-  !rendererSource.includes('if(y+s.lineHeight>bottom)return;'),
-  'Renderer still silently drops Executive Brief lines when geometry is too small.'
+  rendererOrchestratorSource.includes('SUMMARY_LAYOUT_UNDERSIZED'),
+  'Summary renderer must surface undersized Layout geometry instead of silently dropping content.'
+);
+
+assert.ok(
+  rendererOrchestratorSource.includes("raw.split(/\\n\\s*\\n|\\n/).map(cleanText).filter(Boolean)"),
+  'Summary renderer must preserve explicit paragraph boundaries without sentence-level re-splitting.'
 );
 
 // Hard content-integrity rule: production renderer contract explicitly forbids silent truncation.
 assert.ok(
-  rendererSource.includes('No maxLines, slice(), ellipsis or hidden-count'),
+  blockRendererSource.includes('No maxLines, slice(), ellipsis or hidden-count'),
   'Renderer content-integrity contract is missing.'
 );
 
