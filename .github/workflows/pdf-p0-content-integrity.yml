@@ -30,3 +30,6 @@ jobs:
 
       - name: Run intelligent composition contract
         run: node Tests/intelligent-composition.test.js
+
+      - name: Run sparse page packing regression
+        run: node Tests/page-packing-extension.test.js
