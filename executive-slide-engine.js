@@ -14,9 +14,9 @@
     'use strict';
 
     const ENGINE_NAME = 'ExecutiveSlideEngine';
-    const ENGINE_VERSION = '1.4.5-meeting-type-v1';
+    const ENGINE_VERSION = '1.4.6-semantic-icons-v2';
     const ENGINE_BASE = 'https://meetmind-app.github.io/meetmind-pdf-engine/';
-    const CACHE_VERSION = 'golden-1.4.5-meeting-type-v1';
+    const CACHE_VERSION = 'golden-1.4.6-semantic-icons-v2';
 
     const PDF_LIB_CDN =
         'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js';
@@ -31,6 +31,7 @@
         renderContext: 'core/render-context.js',
         designSystem: 'Renderer/design-system.js',
         icons: 'Renderer/icons.js',
+        semanticIconsV2: 'Renderer/semantic-icons-v2.js',
         blockRenderers: 'Renderer/renderers/block-renderers.js',
         meetingTypeV1: 'Renderer/meeting-type-v1.js',
         architectureV2: 'Renderer/architecture-v2.js',
@@ -416,6 +417,7 @@
                 );
             }
 
+            await loadClassicScript(engineUrl(PATHS.semanticIconsV2));
             await loadClassicScript(engineUrl(PATHS.blockRenderers));
             // Semantic wrappers load after the base renderer map and before
             // MeetMindRenderer captures the final blockRenderers object.
@@ -478,6 +480,12 @@
             if (!host?.icons || typeof host.icons.get !== 'function') {
                 throw new Error(
                     'Golden Icon Registry was not attached to ExecutiveSlideEngine.icons.'
+                );
+            }
+
+            if (!host?.semanticIcons || typeof host.semanticIcons.resolveMetric !== 'function') {
+                throw new Error(
+                    'Semantic Icons v2 did not expose ExecutiveSlideEngine.semanticIcons.resolveMetric().'
                 );
             }
 
