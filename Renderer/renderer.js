@@ -20,7 +20,7 @@
     'use strict';
 
     const NAME = 'MeetMindRenderer';
-    const VERSION = '1.0.5-page-packing';
+    const VERSION = '1.0.6-report-v1.1';
 
     class RendererError extends Error {
         constructor(code, message, details) {
@@ -58,6 +58,23 @@
         const baseRaw = raw.split('-')[0];
         const base = baseRaw === 'in' ? 'id' : baseRaw;
         return { code: titles[base] ? base : 'en', titles, metricsTitles };
+    }
+
+    function riskSupplementLabels(ctx) {
+        const labels = {
+            en: { impact: 'Impact', mitigation: 'Mitigation' },
+            ru: { impact: 'Влияние', mitigation: 'Меры' },
+            es: { impact: 'Impacto', mitigation: 'Mitigación' },
+            pt: { impact: 'Impacto', mitigation: 'Mitigação' },
+            tr: { impact: 'Etki', mitigation: 'Önlem' },
+            id: { impact: 'Dampak', mitigation: 'Mitigasi' },
+            hi: { impact: 'प्रभाव', mitigation: 'निवारण' },
+            ar: { impact: 'الأثر', mitigation: 'التخفيف' },
+            uz: { impact: 'Ta’sir', mitigation: 'Chora' },
+            fa: { impact: 'اثر', mitigation: 'کاهش ریسک' }
+        };
+        const language = summaryLanguage(ctx).code;
+        return labels[language] || labels.en;
     }
 
     function summaryStyle(ctx, name, fallback) {
@@ -217,6 +234,28 @@
         return [];
     }
 
+    function metricDisplayValue(metric) {
+        const relation = cleanText(metric?.relation).toLowerCase();
+        const current = cleanText(metric?.current_value ?? metric?.currentValue);
+        const previous = cleanText(metric?.previous_value ?? metric?.previousValue);
+        const target = cleanText(metric?.target_value ?? metric?.targetValue);
+        const fallback = cleanText(metric?.value ?? metric?.metric ?? metric?.amount ?? metric?.primaryValue ?? '—');
+
+        if (relation === 'current_to_target' && current && target) return `${current} → ${target}`;
+        if (relation === 'previous_to_current' && previous && current) return `${previous} → ${current}`;
+        if (relation === 'target' && target) return target;
+        if (relation === 'current' && current) return current;
+        return fallback || '—';
+    }
+
+    function metricContextText(metric) {
+        const context = cleanText(metric?.context);
+        const period = cleanText(metric?.target_period ?? metric?.targetPeriod);
+        if (!period) return context;
+        if (!context) return period;
+        return context.toLowerCase().includes(period.toLowerCase()) ? context : `${context} · ${period}`;
+    }
+
     function renderMetricsIntegrity(block, ctx) {
         const g = block.geometry, sp = summarySpacing(ctx), metrics = metricItems(block, ctx.report || {});
         ctx.rect({x:g.x,y:g.y,width:g.width,height:g.height,fill:'cardBg',stroke:'borderDefault',borderWidth:.5,radius:4});
@@ -229,19 +268,70 @@
         const cellW=(innerW-gap*(cols-1))/cols, cellH=(g.y+g.height-sp.padY-y0-gap*(rows-1))/rows;
         const ls=summaryStyle(ctx,'metricLabel',{font:'semibold',size:5.2,lineHeight:6.2,color:'textSecondary'});
         const base=summaryStyle(ctx,'metricValue',{font:'bold',size:8.5,lineHeight:9.5,color:'textPrimary'});
+        const cs=summaryStyle(ctx,'metricContext',{font:'regular',size:4.8,lineHeight:5.8,color:'textSecondary'});
+
         metrics.forEach((m,i)=>{
             const row=Math.floor(i/cols), rowCount=Math.min(cols,metrics.length-row*cols);
             const offset=(cols-rowCount)*(cellW+gap)/2, col=i-row*cols;
             const x=g.x+sp.padX+offset+col*(cellW+gap), y=y0+row*(cellH+gap);
             ctx.rect({x,y,width:cellW,height:cellH,fill:'cardBg',stroke:'borderDefault',borderWidth:.5,radius:3});
-            const label=cleanText(m?.label||m?.title||m?.name||''), value=cleanText(m?.value||m?.metric||m?.amount||'—');
+
+            const label=cleanText(m?.label||m?.title||m?.name||'');
+            const value=metricDisplayValue(m);
+            const context=metricContextText(m);
             const labelLines=summaryWrap(ctx,label,cellW-10,ls), labelH=labelLines.length*ls.lineHeight;
+            const contextLines=context?summaryWrap(ctx,context,cellW-10,cs):[];
+            const contextH=contextLines.length*cs.lineHeight+(contextLines.length?1.5:0);
             labelLines.forEach((line,j)=>ctx.text(line,{x:x+5,y:y+4+j*ls.lineHeight,size:ls.size,font:ls.font,color:ls.color}));
-            let vs={...base}, lines=summaryWrap(ctx,value,cellW-10,vs), top=y+6+labelH, avail=y+cellH-3-top;
-            while(vs.size>6.6 && lines.length*vs.lineHeight>avail){vs={...vs,size:vs.size-.4,lineHeight:vs.lineHeight-.4};lines=summaryWrap(ctx,value,cellW-10,vs);}
-            if(lines.length*vs.lineHeight>avail+.5) throw new RendererError('METRIC_LAYOUT_UNDERSIZED','Metric value does not fit allocated geometry.',{index:i,geometry:g});
+
+            let vs={...base};
+            let lines=summaryWrap(ctx,value,cellW-10,vs);
+            const top=y+6+labelH;
+            const avail=y+cellH-3-top-contextH;
+            while(vs.size>6.6 && lines.length*vs.lineHeight>avail){
+                vs={...vs,size:vs.size-.4,lineHeight:vs.lineHeight-.4};
+                lines=summaryWrap(ctx,value,cellW-10,vs);
+            }
+            if(lines.length*vs.lineHeight>avail+.5) {
+                throw new RendererError('METRIC_LAYOUT_UNDERSIZED','Metric value/context does not fit allocated geometry.',{index:i,geometry:g});
+            }
             lines.forEach((line,j)=>ctx.text(line,{x:x+5,y:top+j*vs.lineHeight,size:vs.size,font:vs.font,color:vs.color}));
+
+            if(contextLines.length){
+                const contextY=top+lines.length*vs.lineHeight+1.5;
+                contextLines.forEach((line,j)=>ctx.text(line,{x:x+5,y:contextY+j*cs.lineHeight,size:cs.size,font:cs.font,color:cs.color}));
+            }
         });
+    }
+
+    function riskItems(block, report) {
+        const raw = block?.data ?? block?.content ?? block?.items ?? block?.value;
+        if (Array.isArray(raw)) return raw;
+        if (raw && typeof raw === 'object') {
+            for (const key of ['items','risks','values']) if (Array.isArray(raw[key])) return raw[key];
+        }
+        return Array.isArray(report?.risks) ? report.risks : [];
+    }
+
+    function renderRisksV11(block, ctx, candidate) {
+        if (typeof candidate !== 'function') {
+            throw new RendererError('RISK_RENDERER_NOT_FOUND', 'Enriched Risks renderer requires the canonical risk renderer.');
+        }
+        const labels = riskSupplementLabels(ctx);
+        const enriched = riskItems(block, ctx.report || {}).map(raw => {
+            if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+            const description = cleanText(raw.description ?? raw.details ?? raw.text);
+            const impact = cleanText(raw.impact);
+            const mitigation = cleanText(raw.mitigation);
+            const supplemental = [];
+            if (impact) supplemental.push(`${labels.impact}: ${impact}`);
+            if (mitigation) supplemental.push(`${labels.mitigation}: ${mitigation}`);
+            return {
+                ...raw,
+                description: [description, ...supplemental].filter(Boolean).join(' ')
+            };
+        });
+        return candidate(Object.freeze({...block, data: Object.freeze(enriched)}), ctx);
     }
 
     function canonicalId(block) {
@@ -503,6 +593,11 @@
 
         const rendererName = definition?.renderer || block.renderer || block.type || block.id;
         const candidate = renderers?.[rendererName] || renderers?.[block.id];
+
+        if (block.id === 'risks' && typeof candidate === 'function') {
+            return (b, ctx) => renderRisksV11(b, ctx, candidate);
+        }
+
         if ((block.id === 'meetingStats' || block.id === 'stats') && typeof candidate === 'function') {
             return (b, ctx) => {
                 const explicit = b?.data ?? b?.content;
