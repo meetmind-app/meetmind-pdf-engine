@@ -42,3 +42,6 @@ jobs:
 
       - name: Run report renderer v1.1 regression
         run: node Tests/report-renderer-v1.1.test.js
+
+      - name: Run Architecture and Process v2 regression
+        run: node Tests/architecture-process-v2.test.js
