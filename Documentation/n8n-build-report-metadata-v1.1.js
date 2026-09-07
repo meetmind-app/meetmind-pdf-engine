@@ -15,7 +15,10 @@ function generateToken(length = 16) {
 
 function normalizeReportLanguage(value) {
   const raw = String(value || 'en').trim().replace(/_/g, '-').toLowerCase();
-  if (raw === 'pt' || raw === 'pt-br' || raw.startsWith('pt-')) return 'pt-BR';
+
+  // Product locale is Portuguese (Brazil), while the persisted/runtime key
+  // remains `pt` for backward compatibility with existing Web, DB and reports.
+  if (raw === 'pt' || raw === 'pt-br' || raw.startsWith('pt-')) return 'pt';
   if (raw === 'in' || raw.startsWith('in-')) return 'id';
 
   const base = raw.split('-')[0];
