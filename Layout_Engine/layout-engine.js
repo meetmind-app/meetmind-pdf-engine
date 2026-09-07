@@ -1,6 +1,6 @@
 /**
  * MeetMind Executive PDF Engine
- * Layout Engine — Intelligent Composition v1.8
+ * Layout Engine — Intelligent Composition v1.8.1
  *
  * Public contract preserved:
  *   MeetMindLayoutEngine.layout(compositionResult, options?)
@@ -322,7 +322,16 @@
         return modeName === 'regular' ? 0 : modeName === 'compact' ? 1 : 2;
     }
 
-    function chooseAdaptivePairLayout(firstId, secondId, map, contentW, mode, preferredRatio = 0.5) {
+    function chooseAdaptivePairLayout(
+        firstId,
+        secondId,
+        map,
+        contentW,
+        mode,
+        preferredRatio = 0.5,
+        unusedWeight = 0.28,
+        maxUnusedRatio = 0.55
+    ) {
         const first = map.get(firstId);
         const second = map.get(secondId);
         if (!first || !second) return null;
@@ -341,11 +350,19 @@
             const h2 = measure(second, rightW, mode);
             const rowH = Math.max(h1, h2);
             const unusedHeight = Math.max(0, rowH - h1) + Math.max(0, rowH - h2);
+            const unusedRatio = rowH > 0 ? unusedHeight / rowH : 0;
+            const severeUnusedPenalty = unusedRatio > maxUnusedRatio
+                ? rowH * (0.45 + Math.min(0.35, unusedRatio - maxUnusedRatio) * 1.5)
+                : 0;
             candidates.push({
                 kind: 'row',
                 totalHeight: rowH,
                 unusedHeight,
-                score: rowH + unusedHeight * 0.28 + Math.abs(ratio - preferredRatio) * 3,
+                unusedRatio,
+                score: rowH
+                    + unusedHeight * unusedWeight
+                    + severeUnusedPenalty
+                    + Math.abs(ratio - preferredRatio) * 3,
                 placements: [
                     { id: firstId, xOffset: 0, width: leftW, height: rowH, naturalHeight: h1 },
                     { id: secondId, xOffset: leftW + gap, width: rightW, height: rowH, naturalHeight: h2 }
@@ -359,6 +376,7 @@
             kind: 'stack',
             totalHeight: firstH + mode.sectionGap + secondH,
             unusedHeight: 0,
+            unusedRatio: 0,
             score: firstH + mode.sectionGap + secondH,
             placements: [
                 { id: firstId, xOffset: 0, width: contentW, height: firstH, naturalHeight: firstH },
@@ -380,6 +398,10 @@
 
         if (candidate.kind === 'row') {
             candidate.placements.forEach(placement => {
+                const unusedHeight = Math.max(0, candidate.totalHeight - placement.naturalHeight);
+                const unusedHeightRatio = candidate.totalHeight > 0
+                    ? unusedHeight / candidate.totalHeight
+                    : 0;
                 pageBlocks.push(cloneWithGeometry(
                     map.get(placement.id),
                     { x: x + placement.xOffset, y: cursorY, width: placement.width, height: placement.height },
@@ -387,7 +409,9 @@
                         density: modeName,
                         naturalHeight: placement.naturalHeight,
                         adaptiveComposition: true,
-                        compositionAxis: 'row'
+                        compositionAxis: 'row',
+                        unusedHeight,
+                        unusedHeightRatio
                     }
                 ));
             });
@@ -402,7 +426,9 @@
                     density: modeName,
                     naturalHeight: placement.naturalHeight,
                     adaptiveComposition: true,
-                    compositionAxis: 'stack'
+                    compositionAxis: 'stack',
+                    unusedHeight: 0,
+                    unusedHeightRatio: 0
                 }
             ));
             cursorY += placement.height + (index < candidate.placements.length - 1 ? mode.sectionGap : 0);
@@ -434,7 +460,16 @@
         const metrics = map.get('keyMetrics');
         if (summary && metrics) {
             if (options.adaptiveExecutive === true) {
-                const candidate = chooseAdaptivePairLayout('executiveSummary', 'keyMetrics', map, contentW, mode, 0.435);
+                const candidate = chooseAdaptivePairLayout(
+                    'executiveSummary',
+                    'keyMetrics',
+                    map,
+                    contentW,
+                    mode,
+                    0.435,
+                    0.72,
+                    0.38
+                );
                 y = placeAdaptivePair(pageBlocks, candidate, map, x, y, modeName, mode);
             } else {
                 const gap = mode.columnGap;
@@ -822,7 +857,7 @@
     }
 
     global.MeetMindLayoutEngine = Object.freeze({
-        version: 'golden-1.8.0-intelligent-composition',
+        version: 'golden-1.8.1-intelligent-composition',
         PAGE,
         MODES,
         layout
