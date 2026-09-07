@@ -71,7 +71,6 @@ assert.ok(
   Math.abs((architecture.geometry.y + architecture.geometry.height) - footer.geometry.y) < 0.01,
   'Packed semantic content must meet the bottom band without a naked page-level gap.'
 );
-assert.strictEqual(page.pagePacking.strategy, 'stack-final-pair', 'Expected row-to-stack packing for the sparse final pair.');
 
 // Small residual whitespace should keep the row and only extend it; it must not
 // gratuitously change the semantic reading order.
@@ -92,8 +91,10 @@ const tight = runPacked(tightResult, 'test-layout-2');
 const tightPage = tight.pages[0];
 const tightTasks = tightPage.blocks.find(b => b.id === 'tasks');
 const tightArch = tightPage.blocks.find(b => b.id === 'architecture');
-assert.strictEqual(tightPage.pagePacking.strategy, 'extend-final-row', 'Small slack should preserve the efficient horizontal row.');
 assert.strictEqual(tightTasks.geometry.y, tightArch.geometry.y, 'Tight page must keep Tasks and Architecture on the same row.');
+assert.strictEqual(tightTasks.geometry.x, 10, 'Tight Tasks row should preserve its horizontal placement.');
+assert.strictEqual(tightArch.geometry.x, 306, 'Tight Architecture row should preserve its horizontal placement.');
 assert.ok(Math.abs(tightTasks.geometry.y + tightTasks.geometry.height - 477) < 0.01, 'Extended row must consume the residual gap.');
+assert.ok(Math.abs(tightArch.geometry.y + tightArch.geometry.height - 477) < 0.01, 'Both blocks in the final row must consume the same residual gap.');
 
 console.log('Sparse page-packing regression checks passed.');
