@@ -57,3 +57,6 @@ jobs:
 
       - name: Run Report Metadata v1.1 regression
         run: node Tests/build-report-metadata-v1.1.test.js
+
+      - name: Run shared E2E contract corpus
+        run: node Tests/e2e-contract-corpus.test.js
