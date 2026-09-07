@@ -36,6 +36,19 @@ assert.ok(
   'Renderer still truncates wrapped due dates to one line.'
 );
 
+// Summary measurement and rendering must use the same explicit paragraph boundaries.
+// Sentence-level splitting in the renderer adds spacing that Layout never measured and can silently drop the last sentence.
+assert.ok(
+  !rendererSource.includes('sentences.length>=3?sentences'),
+  'Renderer still converts a single Executive Brief paragraph into sentence paragraphs after Layout measurement.'
+);
+
+// Renderer must not silently stop drawing Summary lines at the card boundary.
+assert.ok(
+  !rendererSource.includes('if(y+s.lineHeight>bottom)return;'),
+  'Renderer still silently drops Executive Brief lines when geometry is too small.'
+);
+
 // Hard content-integrity rule: production renderer contract explicitly forbids silent truncation.
 assert.ok(
   rendererSource.includes('No maxLines, slice(), ellipsis or hidden-count'),
