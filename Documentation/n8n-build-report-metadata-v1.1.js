@@ -13,14 +13,25 @@ function generateToken(length = 16) {
   return result;
 }
 
+function normalizeReportLanguage(value) {
+  const raw = String(value || 'en').trim().replace(/_/g, '-').toLowerCase();
+  if (raw === 'pt' || raw === 'pt-br' || raw.startsWith('pt-')) return 'pt-BR';
+  if (raw === 'in' || raw.startsWith('in-')) return 'id';
+
+  const base = raw.split('-')[0];
+  const supported = ['ru','en','es','tr','id','hi','ar','uz','fa'];
+  return supported.includes(base) ? base : 'en';
+}
+
 const item = $input.first().json;
 const now = new Date().toISOString();
 
 const context = $('Normalize Processing Context').first().json;
-const reportLanguage =
+const reportLanguage = normalizeReportLanguage(
   context.meeting_language ||
   context.language ||
-  'en';
+  'en'
+);
 
 const rawDurationSeconds = Number(
   $('Transcribe a recording3').first().json.usage?.seconds || 0
