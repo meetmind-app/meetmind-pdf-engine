@@ -45,3 +45,6 @@ jobs:
 
       - name: Run Architecture and Process v2 regression
         run: node Tests/architecture-process-v2.test.js
+
+      - name: Run Meeting Type v1 regression
+        run: node Tests/meeting-type-v1.test.js
