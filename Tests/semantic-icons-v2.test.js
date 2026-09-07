@@ -32,8 +32,8 @@ assert.strictEqual(
 );
 assert.strictEqual(
   icons.resolveMetric({ label: 'COGS', value: '< 20% выручки' }).name,
-  'chart-column',
-  'Revenue keyword in a COGS value must not override the stronger label semantics.'
+  'boxes',
+  'Revenue keyword in a COGS value must not override the stronger economics label semantics.'
 );
 assert.strictEqual(
   icons.resolveMetric({ label: 'Целевая конверсия', relation: 'target', target_value: '24%' }).name,
