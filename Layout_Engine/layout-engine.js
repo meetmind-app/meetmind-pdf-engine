@@ -1,6 +1,6 @@
 /**
  * MeetMind Executive PDF Engine
- * Layout Engine — Intelligent Composition v1.8.1
+ * Layout Engine — Intelligent Composition v1.8.2
  *
  * Public contract preserved:
  *   MeetMindLayoutEngine.layout(compositionResult, options?)
@@ -92,6 +92,37 @@
         return [];
     }
 
+    function metricDisplayValue(item) {
+        const relation = cleanText(item?.relation).toLowerCase();
+        const current = cleanText(item?.current_value ?? item?.currentValue);
+        const previous = cleanText(item?.previous_value ?? item?.previousValue);
+        const target = cleanText(item?.target_value ?? item?.targetValue);
+        const fallback = cleanText(item?.value ?? item?.primaryValue ?? item?.metric ?? item?.amount);
+
+        if (relation === 'current_to_target' && current && target) return `${current} → ${target}`;
+        if (relation === 'previous_to_current' && previous && current) return `${previous} → ${current}`;
+        if (relation === 'target' && target) return target;
+        if (relation === 'current' && current) return current;
+        return fallback;
+    }
+
+    function metricContextText(item) {
+        const context = cleanText(item?.context);
+        const period = cleanText(item?.target_period ?? item?.targetPeriod);
+        if (!period) return context;
+        if (!context) return period;
+        return context.toLowerCase().includes(period.toLowerCase()) ? context : `${context} · ${period}`;
+    }
+
+    function riskSupplementalText(item) {
+        const impact = cleanText(item?.impact);
+        const mitigation = cleanText(item?.mitigation);
+        const parts = [];
+        if (impact) parts.push(`Impact: ${impact}`);
+        if (mitigation) parts.push(`Mitigation: ${mitigation}`);
+        return parts.join(' ');
+    }
+
     // Deterministic font-independent estimate. Renderer performs the final glyph drawing.
     // Layout intentionally errs slightly high so content is never clipped.
     function charsPerLine(width, fontSize) {
@@ -159,16 +190,27 @@
         const strongSize = mode === MODES.regular ? 6.6 : mode === MODES.compact ? 6.3 : 6.1;
         const bodySize = strongSize;
         const lineHeight = mode === MODES.regular ? 9.0 : mode === MODES.compact ? 8.1 : 7.4;
+        const supplementalSize = Math.max(5.2, bodySize * 0.86);
+        const supplementalLine = Math.max(6.2, mode.smallLine * 0.9);
         const bulletGap = mode === MODES.regular ? 4 : mode === MODES.compact ? 3.3 : 2.7;
         const titleContentGap = mode === MODES.regular ? 6 : mode === MODES.compact ? 5 : 4;
         let h = mode.padY + mode.blockTitleLine + titleContentGap;
+        const isRiskBlock = idOf(block) === 'risks';
 
         for (const item of items) {
             const title = cleanText(item?.title || item?.label || '');
             const body = cleanText(item?.description || item?.details || item?.text || item?.value || (title ? '' : textOf(item)));
+            const supplemental = isRiskBlock ? riskSupplementalText(item) : '';
             const titleLines = title ? lineCount(title, inner, strongSize, 'semibold') : 0;
             const bodyLines = body && body !== title ? lineCount(body, inner, bodySize, 'regular') : 0;
-            h += Math.max(lineHeight, titleLines * lineHeight + bodyLines * lineHeight);
+            const supplementalLines = supplemental ? lineCount(supplemental, inner, supplementalSize, 'regular') : 0;
+            h += Math.max(
+                lineHeight,
+                titleLines * lineHeight
+                    + bodyLines * lineHeight
+                    + supplementalLines * supplementalLine
+                    + (supplementalLines ? 1.5 : 0)
+            );
             h += bulletGap;
         }
 
@@ -206,6 +248,8 @@
         const columns = width >= 300 ? 4 : width >= 200 ? 3 : 2;
         const rows = Math.ceil(items.length / columns);
         const cellW = (width - (columns - 1) * mode.cardGap) / columns;
+        const contextSize = Math.max(5.0, mode.small * 0.88);
+        const contextLine = Math.max(6.0, mode.smallLine * 0.88);
         let total = 0;
         for (let r = 0; r < rows; r++) {
             let rowH = 0;
@@ -213,10 +257,20 @@
                 const item = items[r * columns + c];
                 if (!item) continue;
                 const label = cleanText(item.label || item.title || item.name);
-                const value = cleanText(item.value || item.primaryValue || item.metric);
+                const value = metricDisplayValue(item);
+                const context = metricContextText(item);
+                const innerWidth = cellW - mode.padX * 2;
+                const valueHeight = Math.max(
+                    mode.bodyLine * 1.6,
+                    lineCount(value, innerWidth, mode.body * 1.45, 'bold') * mode.bodyLine
+                );
+                const contextHeight = context
+                    ? lineCount(context, innerWidth, contextSize, 'regular') * contextLine + 1.5
+                    : 0;
                 const h = mode.padY * 2
-                    + Math.max(mode.bodyLine * 1.6, lineCount(value, cellW - mode.padX * 2, mode.body * 1.45) * mode.bodyLine)
-                    + lineCount(label, cellW - mode.padX * 2, mode.small) * mode.smallLine;
+                    + valueHeight
+                    + lineCount(label, innerWidth, mode.small, 'semibold') * mode.smallLine
+                    + contextHeight;
                 rowH = Math.max(rowH, h);
             }
             total += rowH + (r ? mode.cardGap : 0);
@@ -857,7 +911,7 @@
     }
 
     global.MeetMindLayoutEngine = Object.freeze({
-        version: 'golden-1.8.1-intelligent-composition',
+        version: 'golden-1.8.2-intelligent-composition',
         PAGE,
         MODES,
         layout
