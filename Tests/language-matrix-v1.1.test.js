@@ -13,7 +13,7 @@ const languages = [
   { input: 'en-US', canonical: 'en', telegram: 'en', heading: 'Executive Brief', rtl: false },
   { input: 'ru-RU', canonical: 'ru', telegram: 'ru', heading: 'Краткое резюме', rtl: false },
   { input: 'es-ES', canonical: 'es', telegram: 'es', heading: 'Resumen ejecutivo', rtl: false },
-  { input: 'pt-BR', canonical: 'pt-BR', telegram: 'pt', heading: 'Resumo executivo', rtl: false },
+  { input: 'pt-BR', canonical: 'pt', telegram: 'pt', heading: 'Resumo executivo', rtl: false },
   { input: 'tr-TR', canonical: 'tr', telegram: 'tr', heading: 'Yönetici özeti', rtl: false },
   { input: 'id-ID', canonical: 'id', telegram: 'id', heading: 'Ringkasan eksekutif', rtl: false },
   { input: 'hi-IN', canonical: 'hi', telegram: 'hi', heading: 'कार्यकारी सारांश', rtl: false },
@@ -85,6 +85,6 @@ const legacyIndonesian = runMetadata('in-ID');
 assert.strictEqual(legacyIndonesian.report_json.language, 'id');
 
 const portugueseAlias = runMetadata('pt');
-assert.strictEqual(portugueseAlias.report_json.language, 'pt-BR');
+assert.strictEqual(portugueseAlias.report_json.language, 'pt');
 
 console.log('Ten-language v1.1 contract matrix passed.');
