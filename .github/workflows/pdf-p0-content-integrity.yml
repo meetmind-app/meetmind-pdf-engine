@@ -8,7 +8,9 @@ on:
     paths:
       - 'Renderer/**'
       - 'Layout_Engine/**'
+      - 'Composition_Engine/**'
       - 'Tests/**'
+      - 'Documentation/**'
       - '.github/workflows/pdf-p0-content-integrity.yml'
 
 jobs:
@@ -25,3 +27,6 @@ jobs:
 
       - name: Run P0 regression checks
         run: node Tests/p0-content-integrity.test.js
+
+      - name: Run intelligent composition contract
+        run: node Tests/intelligent-composition.test.js
