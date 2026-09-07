@@ -60,8 +60,19 @@ assert.ok(ru.report.includes('Николай — Принять решение')
 assert.strictEqual(ru.telegram_report_compacted, false);
 assert.ok(ru.report.length <= 3900);
 
+const ptBr = run({
+  report_language: 'pt-BR',
+  meeting_title: 'Piloto Brasil',
+  executive_brief: 'Validar disposição a pagar.',
+  risks: [{ title: 'Pagamento', impact: 'Margem', mitigation: 'Comparar provedores' }]
+});
+assert.strictEqual(ptBr.language, 'pt', 'Telegram presentation locale should normalize pt-BR to pt.');
+assert.ok(ptBr.report.includes('Resumo executivo'), 'pt-BR must use Portuguese Telegram labels, not English fallback.');
+assert.ok(ptBr.report.includes('Impacto: Margem'));
+assert.ok(ptBr.report.includes('Mitigação: Comparar provedores'));
+
 const ar = run({
-  report_language: 'ar',
+  report_language: 'ar-SA',
   architecture: {
     sections: [{
       title: 'المعالجة',
@@ -71,7 +82,25 @@ const ar = run({
   }
 });
 assert.strictEqual(ar.direction, 'rtl');
+assert.strictEqual(ar.language, 'ar');
 assert.ok(ar.report.includes('A ← B'));
+
+const fa = run({
+  report_language: 'fa-IR',
+  architecture: {
+    sections: [{
+      title: 'پردازش',
+      layout: 'process',
+      items: [{ title: 'A' }, { title: 'B' }]
+    }]
+  }
+});
+assert.strictEqual(fa.direction, 'rtl');
+assert.ok(fa.report.includes('A ← B'));
+
+const indonesiaAlias = run({ report_language: 'in-ID', executive_brief: 'Uji.' });
+assert.strictEqual(indonesiaAlias.language, 'id');
+assert.ok(indonesiaAlias.report.includes('Ringkasan eksekutif'));
 
 const long = run({
   report_language: 'en',
