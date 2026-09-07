@@ -1,0 +1,27 @@
+name: PDF P0 Content Integrity
+
+on:
+  push:
+    branches:
+      - pdf-layout-hardening-v1
+  pull_request:
+    paths:
+      - 'Renderer/**'
+      - 'Layout_Engine/**'
+      - 'Tests/**'
+      - '.github/workflows/pdf-p0-content-integrity.yml'
+
+jobs:
+  content-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run P0 regression checks
+        run: node Tests/p0-content-integrity.test.js
