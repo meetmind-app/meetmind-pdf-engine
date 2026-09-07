@@ -20,7 +20,7 @@
     'use strict';
 
     const NAME = 'MeetMindRenderer';
-    const VERSION = '1.0.6-report-v1.1';
+    const VERSION = '1.0.7-semantic-icons-v2';
 
     class RendererError extends Error {
         constructor(code, message, details) {
@@ -147,7 +147,7 @@
         return typeof raw === 'string' ? raw.split(/\n\s*\n|\n/).map(cleanText).filter(Boolean) : [];
     }
 
-    function summaryIconPath(tag, attrs) {
+    function registryIconPath(tag, attrs) {
         const n = value => Number(value || 0);
         if (tag === 'path') return String(attrs.d || '');
         if (tag === 'line') return `M ${n(attrs.x1)} ${n(attrs.y1)} L ${n(attrs.x2)} ${n(attrs.y2)}`;
@@ -157,6 +157,10 @@
                 .filter(point => point.length === 2 && point.every(Number.isFinite));
             if (!points.length) return '';
             return `M ${points[0][0]} ${points[0][1]} ` + points.slice(1).map(point => `L ${point[0]} ${point[1]}`).join(' ');
+        }
+        if (tag === 'rect') {
+            const x = n(attrs.x), y = n(attrs.y), w = n(attrs.width), h = n(attrs.height);
+            return `M ${x} ${y} H ${x + w} V ${y + h} H ${x} Z`;
         }
         if (tag === 'circle') {
             const cx = n(attrs.cx), cy = n(attrs.cy), r = n(attrs.r);
@@ -169,15 +173,16 @@
         return '';
     }
 
-    function drawSummaryIcon(ctx, x, y, size) {
-        const def = globalScope.ExecutiveSlideEngine?.icons?.get?.('sparkles');
-        if (!def || typeof ctx.svgPath !== 'function') return;
+    function drawRegistryIcon(ctx, name, x, y, size, color = 'purplePrimary') {
+        const def = globalScope.ExecutiveSlideEngine?.icons?.get?.(name);
+        if (!def || typeof ctx.svgPath !== 'function') return false;
         const drawY = y - size * 1.08;
         const stroke = Math.max(.48, Math.min(.72, size * .055));
         def.nodes.forEach(([tag, attrs]) => {
-            const path = summaryIconPath(tag, attrs || {});
-            if (path) ctx.svgPath(path, { x, y: drawY, size, stroke: 'purplePrimary', borderWidth: stroke });
+            const path = registryIconPath(tag, attrs || {});
+            if (path) ctx.svgPath(path, { x, y: drawY, size, stroke: color, borderWidth: stroke });
         });
+        return true;
     }
 
     function renderSummaryIntegrity(block, ctx) {
@@ -189,7 +194,7 @@
         const heading = summaryStyle(ctx, 'blockTitle',
             { font: 'bold', size: 8.2, lineHeight: 9.8, color: 'textPrimary' });
         const language = summaryLanguage(ctx);
-        drawSummaryIcon(ctx, g.x + sp.padX, g.y + sp.padY + 1.2, 9.2);
+        drawRegistryIcon(ctx, 'sparkles', g.x + sp.padX, g.y + sp.padY + 1.2, 9.2, 'purplePrimary');
         ctx.text(language.titles[language.code], {
             x: g.x + sp.padX + 13.2, y: g.y + sp.padY,
             size: heading.size, font: heading.font, color: 'purplePrimary'
@@ -261,7 +266,10 @@
         ctx.rect({x:g.x,y:g.y,width:g.width,height:g.height,fill:'cardBg',stroke:'borderDefault',borderWidth:.5,radius:4});
         const h = summaryStyle(ctx,'blockTitle',{font:'bold',size:8.2,lineHeight:9.8,color:'textPrimary'});
         const language = summaryLanguage(ctx);
-        ctx.text(language.metricsTitles[language.code],{x:g.x+sp.padX,y:g.y+sp.padY,size:h.size,font:h.font,color:'purplePrimary'});
+        const semanticIcons = globalScope.ExecutiveSlideEngine?.semanticIcons;
+        const metricsHeadingIcon = semanticIcons?.section?.('metrics') || 'chart-column';
+        drawRegistryIcon(ctx, metricsHeadingIcon, g.x + sp.padX, g.y + sp.padY + 1.2, 9.2, 'purplePrimary');
+        ctx.text(language.metricsTitles[language.code],{x:g.x+sp.padX+13.2,y:g.y+sp.padY,size:h.size,font:h.font,color:'purplePrimary'});
         const y0=g.y+sp.padY+h.lineHeight+sp.titleGap, gap=3, innerW=g.width-sp.padX*2;
         const cols=metrics.length===5?3:Math.min(4,Math.max(1,metrics.length));
         const rows=Math.max(1,Math.ceil(metrics.length/cols));
@@ -276,17 +284,23 @@
             const x=g.x+sp.padX+offset+col*(cellW+gap), y=y0+row*(cellH+gap);
             ctx.rect({x,y,width:cellW,height:cellH,fill:'cardBg',stroke:'borderDefault',borderWidth:.5,radius:3});
 
+            const semantic = semanticIcons?.resolveMetric?.(m) || { name: 'file-text', color: 'purplePrimary' };
+            const iconSize = Math.min(8, Math.max(6.8, cellH * .14));
+            drawRegistryIcon(ctx, semantic.name, x+5, y+5.4, iconSize, semantic.color || 'purplePrimary');
+
             const label=cleanText(m?.label||m?.title||m?.name||'');
             const value=metricDisplayValue(m);
             const context=metricContextText(m);
-            const labelLines=summaryWrap(ctx,label,cellW-10,ls), labelH=labelLines.length*ls.lineHeight;
+            const labelX=x+16;
+            const labelW=Math.max(18,cellW-21);
+            const labelLines=summaryWrap(ctx,label,labelW,ls), labelH=labelLines.length*ls.lineHeight;
             const contextLines=context?summaryWrap(ctx,context,cellW-10,cs):[];
             const contextH=contextLines.length*cs.lineHeight+(contextLines.length?1.5:0);
-            labelLines.forEach((line,j)=>ctx.text(line,{x:x+5,y:y+4+j*ls.lineHeight,size:ls.size,font:ls.font,color:ls.color}));
+            labelLines.forEach((line,j)=>ctx.text(line,{x:labelX,y:y+4+j*ls.lineHeight,size:ls.size,font:ls.font,color:ls.color}));
 
             let vs={...base};
             let lines=summaryWrap(ctx,value,cellW-10,vs);
-            const top=y+6+labelH;
+            const top=y+7+labelH;
             const avail=y+cellH-3-top-contextH;
             while(vs.size>6.6 && lines.length*vs.lineHeight>avail){
                 vs={...vs,size:vs.size-.4,lineHeight:vs.lineHeight-.4};
@@ -429,10 +443,9 @@
         const replacements = new Map();
         let stackApplied = false;
 
-        // For a large dead band, prefer a true semantic reflow over simply making
-        // two short cards taller. Full-width height is estimated from item count and
-        // the width expansion, then the entire available band is allocated to the
-        // two stacked blocks. This is deliberately conservative for tables/process cards.
+        // For a large dead band, prefer a true semantic reflow over making two
+        // short cards artificially huge. Full-width cards may grow modestly, but
+        // genuine sparse-report whitespace remains outside the cards and is balanced.
         if (tasks && architecture && ids.size === 2 && slack >= 16) {
             const ordered = [tasks, architecture];
             const startY = Math.min(...ordered.map(block => Number(block.geometry.y)));
@@ -446,47 +459,62 @@
             if (minimumNeeded <= available + 0.01) {
                 const distributable = Math.max(0, available - minimumNeeded);
                 const naturalSum = Math.max(1, natural[0] + natural[1]);
-                const firstHeight = natural[0] + distributable * (natural[0] / naturalSum);
-                const secondHeight = available - sectionGap - firstHeight;
+                const expansionCap = Math.min(
+                    distributable,
+                    Math.max(16, naturalSum * 0.18),
+                    32
+                );
+                const firstHeight = natural[0] + expansionCap * (natural[0] / naturalSum);
+                const secondHeight = natural[1] + expansionCap * (natural[1] / naturalSum);
+                const used = firstHeight + sectionGap + secondHeight;
+                const balancedOffset = Math.max(0, (available - used) / 2);
+                const firstY = startY + balancedOffset;
+                const secondY = firstY + firstHeight + sectionGap;
 
                 replacements.set(tasks, cloneBlockGeometry(tasks, {
-                    x, y: startY, width, height: firstHeight
+                    x, y: firstY, width, height: firstHeight
                 }, {
                     adaptiveComposition: true,
                     compositionAxis: 'stack',
-                    pagePacking: 'stack-final-pair',
+                    pagePacking: 'stack-final-pair-balanced',
                     allocatedHeight: firstHeight,
-                    packingSlackConsumed: slack
+                    packingSlackConsumed: expansionCap,
+                    packingWhitespaceExternalized: Math.max(0, available - used)
                 }));
                 replacements.set(architecture, cloneBlockGeometry(architecture, {
-                    x, y: startY + firstHeight + sectionGap, width, height: secondHeight
+                    x, y: secondY, width, height: secondHeight
                 }, {
                     adaptiveComposition: true,
                     compositionAxis: 'stack',
-                    pagePacking: 'stack-final-pair',
+                    pagePacking: 'stack-final-pair-balanced',
                     allocatedHeight: secondHeight,
-                    packingSlackConsumed: slack
+                    packingSlackConsumed: expansionCap,
+                    packingWhitespaceExternalized: Math.max(0, available - used)
                 }));
                 stackApplied = true;
             }
         }
 
-        // If a real stack cannot fit, preserve the efficient horizontal row and
-        // consume only the residual page-level band. This is a last-resort visual
-        // packing operation; no content is shrunk or removed.
+        // Tight pages keep the efficient horizontal row. Small residual slack may
+        // increase card height modestly, but never enough to create giant empty cards.
         if (replacements.size === 0) {
             lastRow.forEach(block => {
                 const g = block.geometry;
-                const allocatedHeight = bottomBandY - Number(g.y);
+                const naturalHeight = Number(g.height);
+                const extension = Math.min(slack, Math.max(4, naturalHeight * 0.12), 10);
+                const remaining = Math.max(0, slack - extension);
+                const shift = remaining / 2;
+                const allocatedHeight = naturalHeight + extension;
                 replacements.set(block, cloneBlockGeometry(block, {
                     x: g.x,
-                    y: g.y,
+                    y: Number(g.y) + shift,
                     width: g.width,
                     height: allocatedHeight
                 }, {
-                    pagePacking: 'extend-final-row',
+                    pagePacking: 'extend-final-row-balanced',
                     allocatedHeight,
-                    packingSlackConsumed: slack
+                    packingSlackConsumed: extension,
+                    packingWhitespaceExternalized: remaining
                 }));
             });
         }
@@ -498,7 +526,7 @@
             pagePacking: Object.freeze({
                 applied: true,
                 slackConsumed: slack,
-                strategy: stackApplied ? 'stack-final-pair' : 'extend-final-row'
+                strategy: stackApplied ? 'stack-final-pair-balanced' : 'extend-final-row-balanced'
             })
         });
     }
@@ -522,7 +550,7 @@
 
         globalScope.MeetMindLayoutEngine = Object.freeze({
             ...engine,
-            version: `${engine.version || 'layout'}+page-pack-1.1`,
+            version: `${engine.version || 'layout'}+page-pack-1.2`,
             layout: wrappedLayout
         });
     }
