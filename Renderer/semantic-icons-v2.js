@@ -51,17 +51,7 @@
         return Object.freeze({ name, color, semantic });
     }
 
-    function resolveMetric(metric) {
-        const primary = primaryText(metric);
-        const text = allText(metric);
-        const relation = clean(metric?.relation).toLowerCase();
-
-        if (relation === 'target' || relation === 'current_to_target') {
-            return result('target', 'purplePrimary', 'target');
-        }
-
-        // Strongest signal is the metric's own name/label. This prevents a COGS
-        // metric such as "< 20% revenue" from being misclassified as revenue.
+    function classifyStrongPrimary(primary) {
         if (includesAny(primary, PATTERNS.economics)) return result('boxes', 'orangeRisk', 'economics');
         if (includesAny(primary, PATTERNS.time)) return result('clock-3', 'purplePrimary', 'time');
         if (includesAny(primary, PATTERNS.people)) return result('users-round', 'purplePrimary', 'people');
@@ -69,7 +59,25 @@
         if (includesAny(primary, PATTERNS.rate)) return result('target', 'greenSuccess', 'rate');
         if (includesAny(primary, PATTERNS.system)) return result('network', 'purplePrimary', 'system');
         if (includesAny(primary, PATTERNS.risk)) return result('triangle-alert', 'orangeRisk', 'risk');
-        if (includesAny(primary, PATTERNS.target)) return result('target', 'purplePrimary', 'target');
+        return null;
+    }
+
+    function resolveMetric(metric) {
+        const primary = primaryText(metric);
+        const text = allText(metric);
+        const relation = clean(metric?.relation).toLowerCase();
+
+        // The metric category is the primary visual meaning. A target ARR remains
+        // a revenue/growth metric; a target COGS remains an economics metric.
+        const strongPrimary = classifyStrongPrimary(primary);
+        if (strongPrimary) return strongPrimary;
+
+        // A target icon is used when the metric itself is explicitly goal-oriented
+        // or the label is generic and the semantic relation is the strongest signal.
+        if (
+            includesAny(primary, PATTERNS.target) ||
+            relation === 'target' || relation === 'current_to_target'
+        ) return result('target', 'purplePrimary', 'target');
 
         // Context/value is a weaker fallback only when the label itself is generic.
         if (includesAny(text, PATTERNS.time)) return result('clock-3', 'purplePrimary', 'time');
@@ -127,7 +135,7 @@
     }
 
     host.semanticIcons = Object.freeze({
-        version: '2.0.1',
+        version: '2.0.2',
         resolveMetric,
         section,
         meetingType
