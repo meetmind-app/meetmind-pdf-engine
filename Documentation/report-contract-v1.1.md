@@ -39,7 +39,42 @@ Status: additive, backward-compatible contract for PDF/Web/Telegram consumers.
 }
 ```
 
-`meeting_type` stays a stable machine enum. `meeting_type_label` is contextual, user-facing text and may be more specific without expanding the machine enum.
+### Meeting type
+
+`meeting_type` is the stable machine classification used for product behavior. `meeting_type_label` is contextual, user-facing text and may be more specific without forcing a new machine enum.
+
+Stable values remain backward compatible:
+
+- `strategy`
+- `product`
+- `architecture`
+- `planning`
+- `status`
+- `incident`
+- `client`
+- `board`
+- `operations`
+- `research`
+- `partnership`
+- `sales`
+- `education`
+- `personal`
+- `other`
+
+Additive v1.1 values supported by consumers:
+
+- `interview`
+- `retrospective`
+- `workshop`
+- `one_on_one`
+- `review`
+
+Rules:
+
+- Prefer the narrowest type actually supported by meeting evidence.
+- `meeting_type_label` may say, for example, `Интервью с кандидатом на Head of Product`, while `meeting_type = "interview"` remains stable.
+- Consumers may use the machine type to choose presentation semantics, but must not invent facts or omit canonical report sections solely because of the type.
+- If the user-facing label is absent, consumers may localize a generic fallback from `meeting_type`.
 
 ## Key metrics v1.1
 
