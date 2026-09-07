@@ -39,3 +39,6 @@ jobs:
 
       - name: Run canonical report contract v1.1 regression
         run: node Tests/report-contract-v1.1.test.js
+
+      - name: Run report renderer v1.1 regression
+        run: node Tests/report-renderer-v1.1.test.js
