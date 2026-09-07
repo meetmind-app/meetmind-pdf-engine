@@ -67,13 +67,19 @@ const footer = page.blocks.find(b => b.id === 'footer');
 assert.strictEqual(tasks.geometry.x, architecture.geometry.x, 'Sparse final pair should stack on the same left edge.');
 assert.strictEqual(tasks.geometry.width, architecture.geometry.width, 'Sparse final pair should stack at the same full width.');
 assert.ok(architecture.geometry.y > tasks.geometry.y + tasks.geometry.height, 'Architecture must move below Tasks when stack packing is selected.');
+assert.strictEqual(tasks.layout.pagePacking, 'stack-final-pair-balanced');
+assert.strictEqual(architecture.layout.pagePacking, 'stack-final-pair-balanced');
 assert.ok(
-  Math.abs((architecture.geometry.y + architecture.geometry.height) - footer.geometry.y) < 0.01,
-  'Packed semantic content must meet the bottom band without a naked page-level gap.'
+  tasks.geometry.height < 70 && architecture.geometry.height < 85,
+  'Sparse semantic cards were stretched far beyond their natural content height.'
 );
+const topWhitespace = tasks.geometry.y - 270;
+const bottomWhitespace = footer.geometry.y - (architecture.geometry.y + architecture.geometry.height);
+assert.ok(topWhitespace > 0 && bottomWhitespace > 0, 'Genuine sparse-report whitespace should be external to semantic cards.');
+assert.ok(Math.abs(topWhitespace - bottomWhitespace) < 1, 'External sparse whitespace should be visually balanced around the final semantic stack.');
 
-// Small residual whitespace should keep the row and only extend it; it must not
-// gratuitously change the semantic reading order.
+// Small residual whitespace should keep the row and only extend it modestly;
+// it must not gratuitously change reading order or create giant empty cards.
 const tightResult = {
   ...originalResult,
   pages: [{
@@ -94,7 +100,12 @@ const tightArch = tightPage.blocks.find(b => b.id === 'architecture');
 assert.strictEqual(tightTasks.geometry.y, tightArch.geometry.y, 'Tight page must keep Tasks and Architecture on the same row.');
 assert.strictEqual(tightTasks.geometry.x, 10, 'Tight Tasks row should preserve its horizontal placement.');
 assert.strictEqual(tightArch.geometry.x, 306, 'Tight Architecture row should preserve its horizontal placement.');
-assert.ok(Math.abs(tightTasks.geometry.y + tightTasks.geometry.height - 477) < 0.01, 'Extended row must consume the residual gap.');
-assert.ok(Math.abs(tightArch.geometry.y + tightArch.geometry.height - 477) < 0.01, 'Both blocks in the final row must consume the same residual gap.');
+assert.ok(tightTasks.geometry.height <= 70, 'Tight Tasks card expansion exceeded the approved modest cap.');
+assert.ok(tightArch.geometry.height <= 70, 'Tight Architecture card expansion exceeded the approved modest cap.');
+assert.ok(tightTasks.geometry.y > 405, 'Residual whitespace should be balanced instead of being absorbed entirely into card height.');
+assert.ok(
+  footer.geometry.y - (tightTasks.geometry.y + tightTasks.geometry.height) >= 0,
+  'Balanced row must remain above the footer band.'
+);
 
 console.log('Sparse page-packing regression checks passed.');
