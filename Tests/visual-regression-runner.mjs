@@ -14,7 +14,8 @@ fs.mkdirSync(outDir, { recursive: true });
 const cases = [
   ['RU_REAL_001', path.join(__dirname, 'fixtures', 'RU_REAL_001.json')],
   ['RU_DENSE_002', path.join(__dirname, 'fixtures', 'RU_DENSE_002.json')],
-  ['EN_ASYMMETRIC_001', path.join(__dirname, 'fixtures', 'EN_ASYMMETRIC_001.json')]
+  ['EN_ASYMMETRIC_001', path.join(__dirname, 'fixtures', 'EN_ASYMMETRIC_001.json')],
+  ['RU_CONTRACT_V11_001', path.join(__dirname, 'fixtures', 'RU_CONTRACT_V11_001.json')]
 ];
 
 function normalizeCurrentWebPayload(report) {
