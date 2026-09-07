@@ -14,9 +14,9 @@
     'use strict';
 
     const ENGINE_NAME = 'ExecutiveSlideEngine';
-    const ENGINE_VERSION = '1.4.3-i18n';
+    const ENGINE_VERSION = '1.4.4-architecture-v2';
     const ENGINE_BASE = 'https://meetmind-app.github.io/meetmind-pdf-engine/';
-    const CACHE_VERSION = 'golden-1.4.3-i18n';
+    const CACHE_VERSION = 'golden-1.4.4-architecture-v2';
 
     const PDF_LIB_CDN =
         'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js';
@@ -32,6 +32,7 @@
         designSystem: 'Renderer/design-system.js',
         icons: 'Renderer/icons.js',
         blockRenderers: 'Renderer/renderers/block-renderers.js',
+        architectureV2: 'Renderer/architecture-v2.js',
         renderer: 'Renderer/renderer.js'
     });
 
@@ -415,6 +416,10 @@
             }
 
             await loadClassicScript(engineUrl(PATHS.blockRenderers));
+            // Architecture v2 replaces only the canonical architecture renderer.
+            // It must load after the base renderer map and before MeetMindRenderer
+            // captures the final blockRenderers object.
+            await loadClassicScript(engineUrl(PATHS.architectureV2));
             await loadClassicScript(engineUrl(PATHS.renderer));
 
             const compose =
