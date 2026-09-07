@@ -54,3 +54,6 @@ jobs:
 
       - name: Run Telegram Report v1.1 regression
         run: node Tests/telegram-report-v1.1.test.js
+
+      - name: Run Report Metadata v1.1 regression
+        run: node Tests/build-report-metadata-v1.1.test.js
