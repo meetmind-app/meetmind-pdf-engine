@@ -20,7 +20,7 @@
     'use strict';
 
     const NAME = 'MeetMindRenderer';
-    const VERSION = '1.0.4-page-packing';
+    const VERSION = '1.0.5-page-packing';
 
     class RendererError extends Error {
         constructor(code, message, details) {
@@ -268,6 +268,48 @@
         });
     }
 
+    function arrayPayload(block) {
+        const data = block?.data ?? block?.content ?? block?.items ?? block?.value;
+        if (Array.isArray(data)) return data;
+        if (data && typeof data === 'object') {
+            for (const key of ['items','tasks','sections','values']) {
+                if (Array.isArray(data[key])) return data[key];
+            }
+        }
+        return [];
+    }
+
+    function estimateFullWidthHeight(block, fullWidth, density) {
+        const id = canonicalId(block);
+        const g = block.geometry || {};
+        const currentWidth = Math.max(1, Number(g.width) || fullWidth);
+        const measured = Number(block?.layout?.naturalHeight);
+        const natural = Number.isFinite(measured) && measured > 0 ? measured : Math.max(42, Number(g.height) || 42);
+        const widthRatio = Math.max(0.2, Math.min(1, currentWidth / Math.max(1, fullWidth)));
+        const chrome = density === 'dense' ? 22 : density === 'compact' ? 25 : 28;
+        const widthAdjusted = chrome + Math.max(0, natural - chrome) * widthRatio;
+
+        if (id === 'tasks') {
+            const count = arrayPayload(block).length;
+            const base = density === 'dense' ? 35 : density === 'compact' ? 39 : 42;
+            const row = density === 'dense' ? 10 : density === 'compact' ? 11 : 12;
+            return Math.max(base + count * row, Math.min(natural, widthAdjusted));
+        }
+
+        if (id === 'architecture') {
+            const sections = arrayPayload(block);
+            const maxItems = sections.reduce((max, section) => {
+                const items = Array.isArray(section?.items) ? section.items.length : 0;
+                return Math.max(max, items);
+            }, 0);
+            const base = density === 'dense' ? 34 : density === 'compact' ? 38 : 42;
+            const row = density === 'dense' ? 10 : density === 'compact' ? 11 : 12;
+            return Math.max(base + Math.max(1, maxItems) * row, Math.min(natural, widthAdjusted));
+        }
+
+        return Math.max(42, Math.min(natural, widthAdjusted));
+    }
+
     function packSparsePage(page) {
         if (!page || !Array.isArray(page.blocks) || page.blocks.length === 0) return page;
 
@@ -295,25 +337,23 @@
         const tasks = lastRow.find(block => canonicalId(block) === 'tasks');
         const architecture = lastRow.find(block => canonicalId(block) === 'architecture');
         const replacements = new Map();
+        let stackApplied = false;
 
-        // First choice for a large dead band: turn the final Tasks | Architecture row
-        // into a vertical stack when the same content safely fits at full page width.
-        // Existing narrow-column natural heights are conservative upper bounds once
-        // the blocks become wider, so this transformation cannot create clipping.
+        // For a large dead band, prefer a true semantic reflow over simply making
+        // two short cards taller. Full-width height is estimated from item count and
+        // the width expansion, then the entire available band is allocated to the
+        // two stacked blocks. This is deliberately conservative for tables/process cards.
         if (tasks && architecture && ids.size === 2 && slack >= 16) {
             const ordered = [tasks, architecture];
             const startY = Math.min(...ordered.map(block => Number(block.geometry.y)));
             const x = Math.min(...ordered.map(block => Number(block.geometry.x)));
             const right = Math.max(...ordered.map(block => Number(block.geometry.x) + Number(block.geometry.width)));
             const width = right - x;
-            const natural = ordered.map(block => {
-                const measured = Number(block?.layout?.naturalHeight);
-                return Number.isFinite(measured) && measured > 0 ? measured : Number(block.geometry.height);
-            });
+            const natural = ordered.map(block => estimateFullWidthHeight(block, width, density));
             const available = bottomBandY - startY;
             const minimumNeeded = natural[0] + sectionGap + natural[1];
 
-            if (minimumNeeded <= available + 0.01 && minimumNeeded > Math.max(...ordered.map(block => Number(block.geometry.height))) + 6) {
+            if (minimumNeeded <= available + 0.01) {
                 const distributable = Math.max(0, available - minimumNeeded);
                 const naturalSum = Math.max(1, natural[0] + natural[1]);
                 const firstHeight = natural[0] + distributable * (natural[0] / naturalSum);
@@ -337,12 +377,13 @@
                     allocatedHeight: secondHeight,
                     packingSlackConsumed: slack
                 }));
+                stackApplied = true;
             }
         }
 
-        // If stacking is not feasible, keep the efficient row but extend the final
-        // semantic band to the bottom chrome. This removes a naked page-level hole
-        // without shrinking typography, deleting content, or changing pagination.
+        // If a real stack cannot fit, preserve the efficient horizontal row and
+        // consume only the residual page-level band. This is a last-resort visual
+        // packing operation; no content is shrunk or removed.
         if (replacements.size === 0) {
             lastRow.forEach(block => {
                 const g = block.geometry;
@@ -367,9 +408,7 @@
             pagePacking: Object.freeze({
                 applied: true,
                 slackConsumed: slack,
-                strategy: replacements.has(tasks) && replacements.has(architecture)
-                    ? 'stack-final-pair'
-                    : 'extend-final-row'
+                strategy: stackApplied ? 'stack-final-pair' : 'extend-final-row'
             })
         });
     }
@@ -393,7 +432,7 @@
 
         globalScope.MeetMindLayoutEngine = Object.freeze({
             ...engine,
-            version: `${engine.version || 'layout'}+page-pack-1.0`,
+            version: `${engine.version || 'layout'}+page-pack-1.1`,
             layout: wrappedLayout
         });
     }
