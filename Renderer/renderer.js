@@ -8,13 +8,19 @@
  * - resolve the semantic block renderer;
  * - invoke renderer with immutable Layout geometry.
  *
- * No layout, pagination, content truncation or business decisions live here.
+ * No content truncation or business decisions live here.
+ *
+ * Browser-loader note:
+ * The lightweight page-packing extension below wraps MeetMindLayoutEngine.layout()
+ * before executive-slide-engine.js captures the layout function. It only resolves
+ * residual whitespace already left by Layout Engine; it never changes content or
+ * page count. The composition decision remains geometry-driven.
  */
 (function attachMeetMindRenderer(globalScope) {
     'use strict';
 
     const NAME = 'MeetMindRenderer';
-    const VERSION = '1.0.3-visual-regression';
+    const VERSION = '1.0.4-page-packing';
 
     class RendererError extends Error {
         constructor(code, message, details) {
@@ -238,6 +244,160 @@
         });
     }
 
+    function canonicalId(block) {
+        const raw = String(block?.id || block?.type || '');
+        return raw === 'summary' ? 'executiveSummary'
+            : raw === 'metrics' ? 'keyMetrics'
+                : raw === 'stats' ? 'meetingStats'
+                    : raw;
+    }
+
+    function cloneBlockGeometry(block, geometry, layoutPatch = {}) {
+        return Object.freeze({
+            ...block,
+            geometry: Object.freeze({
+                x: Number(geometry.x),
+                y: Number(geometry.y),
+                width: Number(geometry.width),
+                height: Number(geometry.height)
+            }),
+            layout: Object.freeze({
+                ...(isObject(block?.layout) ? block.layout : {}),
+                ...layoutPatch
+            })
+        });
+    }
+
+    function packSparsePage(page) {
+        if (!page || !Array.isArray(page.blocks) || page.blocks.length === 0) return page;
+
+        const blocks = page.blocks;
+        const bottomBand = blocks.filter(block => block?.layout?.sharedBottomBand === true);
+        if (!bottomBand.length) return page;
+
+        const bottomBandY = Math.min(...bottomBand.map(block => Number(block?.geometry?.y)).filter(Number.isFinite));
+        if (!Number.isFinite(bottomBandY)) return page;
+
+        const semantic = blocks.filter(block => !['header','meetingStats','owners','footer'].includes(canonicalId(block)));
+        if (!semantic.length) return page;
+
+        const lastY = Math.max(...semantic.map(block => Number(block?.geometry?.y)).filter(Number.isFinite));
+        const lastRow = semantic.filter(block => Math.abs(Number(block?.geometry?.y) - lastY) <= 0.75);
+        if (!lastRow.length) return page;
+
+        const currentBottom = Math.max(...lastRow.map(block => Number(block.geometry.y) + Number(block.geometry.height)));
+        const slack = bottomBandY - currentBottom;
+        if (!(slack > 5)) return page;
+
+        const density = page.density || page.resolvedDensity || lastRow[0]?.density || lastRow[0]?.layout?.density || 'regular';
+        const sectionGap = density === 'dense' ? 3 : density === 'compact' ? 4.5 : 6;
+        const ids = new Set(lastRow.map(canonicalId));
+        const tasks = lastRow.find(block => canonicalId(block) === 'tasks');
+        const architecture = lastRow.find(block => canonicalId(block) === 'architecture');
+        const replacements = new Map();
+
+        // First choice for a large dead band: turn the final Tasks | Architecture row
+        // into a vertical stack when the same content safely fits at full page width.
+        // Existing narrow-column natural heights are conservative upper bounds once
+        // the blocks become wider, so this transformation cannot create clipping.
+        if (tasks && architecture && ids.size === 2 && slack >= 16) {
+            const ordered = [tasks, architecture];
+            const startY = Math.min(...ordered.map(block => Number(block.geometry.y)));
+            const x = Math.min(...ordered.map(block => Number(block.geometry.x)));
+            const right = Math.max(...ordered.map(block => Number(block.geometry.x) + Number(block.geometry.width)));
+            const width = right - x;
+            const natural = ordered.map(block => {
+                const measured = Number(block?.layout?.naturalHeight);
+                return Number.isFinite(measured) && measured > 0 ? measured : Number(block.geometry.height);
+            });
+            const available = bottomBandY - startY;
+            const minimumNeeded = natural[0] + sectionGap + natural[1];
+
+            if (minimumNeeded <= available + 0.01 && minimumNeeded > Math.max(...ordered.map(block => Number(block.geometry.height))) + 6) {
+                const distributable = Math.max(0, available - minimumNeeded);
+                const naturalSum = Math.max(1, natural[0] + natural[1]);
+                const firstHeight = natural[0] + distributable * (natural[0] / naturalSum);
+                const secondHeight = available - sectionGap - firstHeight;
+
+                replacements.set(tasks, cloneBlockGeometry(tasks, {
+                    x, y: startY, width, height: firstHeight
+                }, {
+                    adaptiveComposition: true,
+                    compositionAxis: 'stack',
+                    pagePacking: 'stack-final-pair',
+                    allocatedHeight: firstHeight,
+                    packingSlackConsumed: slack
+                }));
+                replacements.set(architecture, cloneBlockGeometry(architecture, {
+                    x, y: startY + firstHeight + sectionGap, width, height: secondHeight
+                }, {
+                    adaptiveComposition: true,
+                    compositionAxis: 'stack',
+                    pagePacking: 'stack-final-pair',
+                    allocatedHeight: secondHeight,
+                    packingSlackConsumed: slack
+                }));
+            }
+        }
+
+        // If stacking is not feasible, keep the efficient row but extend the final
+        // semantic band to the bottom chrome. This removes a naked page-level hole
+        // without shrinking typography, deleting content, or changing pagination.
+        if (replacements.size === 0) {
+            lastRow.forEach(block => {
+                const g = block.geometry;
+                const allocatedHeight = bottomBandY - Number(g.y);
+                replacements.set(block, cloneBlockGeometry(block, {
+                    x: g.x,
+                    y: g.y,
+                    width: g.width,
+                    height: allocatedHeight
+                }, {
+                    pagePacking: 'extend-final-row',
+                    allocatedHeight,
+                    packingSlackConsumed: slack
+                }));
+            });
+        }
+
+        const packedBlocks = blocks.map(block => replacements.get(block) || block);
+        return Object.freeze({
+            ...page,
+            blocks: Object.freeze(packedBlocks),
+            pagePacking: Object.freeze({
+                applied: true,
+                slackConsumed: slack,
+                strategy: replacements.has(tasks) && replacements.has(architecture)
+                    ? 'stack-final-pair'
+                    : 'extend-final-row'
+            })
+        });
+    }
+
+    function installPagePackingExtension() {
+        const engine = globalScope.MeetMindLayoutEngine;
+        const originalLayout = engine?.layout;
+        if (typeof originalLayout !== 'function' || originalLayout.__loreviPagePacking === true) return;
+
+        const wrappedLayout = function packedLayout(composition, options = {}) {
+            const raw = originalLayout(composition, options);
+            if (!raw || !Array.isArray(raw.pages) || raw.pages.length === 0) return raw;
+            const pages = raw.pages.map(packSparsePage);
+            return Object.freeze({
+                ...raw,
+                pages: Object.freeze(pages),
+                pagePackingApplied: pages.some(page => page?.pagePacking?.applied === true)
+            });
+        };
+        Object.defineProperty(wrappedLayout, '__loreviPagePacking', { value: true });
+
+        globalScope.MeetMindLayoutEngine = Object.freeze({
+            ...engine,
+            version: `${engine.version || 'layout'}+page-pack-1.0`,
+            layout: wrappedLayout
+        });
+    }
+
     function cloneGeometry(block) {
         const source = isObject(block.geometry)
             ? block.geometry
@@ -364,6 +524,8 @@
         if (typeof renderContext.finalize === 'function') renderContext.finalize(layoutResult);
         return Object.freeze({ engine: Object.freeze({ name: NAME, version: VERSION }), pageCount: renderedPages.length, pages: Object.freeze(renderedPages) });
     }
+
+    installPagePackingExtension();
 
     const api = Object.freeze({ name: NAME, version: VERSION, render, RendererError });
     globalScope[NAME] = api;
