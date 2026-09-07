@@ -17,8 +17,9 @@ const host = {
   }
 };
 const window = { ExecutiveSlideEngine: host };
-vm.createContext({ window });
-vm.runInContext(source, { window }, { filename: 'architecture-v2.js' });
+const sandbox = { window };
+vm.createContext(sandbox);
+vm.runInContext(source, sandbox, { filename: 'architecture-v2.js' });
 
 const renderer = window.ExecutiveSlideEngine.blockRenderers.architecture;
 assert.strictEqual(typeof renderer, 'function', 'Architecture v2 renderer did not install.');
