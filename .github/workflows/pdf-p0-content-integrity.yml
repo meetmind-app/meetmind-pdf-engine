@@ -1,0 +1,65 @@
+name: PDF P0 Content Integrity
+
+on:
+  push:
+    branches:
+      - pdf-layout-hardening-v1
+  pull_request:
+    paths:
+      - 'Renderer/**'
+      - 'Layout_Engine/**'
+      - 'Composition_Engine/**'
+      - 'Tests/**'
+      - 'Documentation/**'
+      - '.github/workflows/pdf-p0-content-integrity.yml'
+
+jobs:
+  content-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run P0 regression checks
+        run: node Tests/p0-content-integrity.test.js
+
+      - name: Run intelligent composition contract
+        run: node Tests/intelligent-composition.test.js
+
+      - name: Run sparse page packing regression
+        run: node Tests/page-packing-extension.test.js
+
+      - name: Run executive pair whitespace regression
+        run: node Tests/executive-pair-whitespace.test.js
+
+      - name: Run canonical report contract v1.1 regression
+        run: node Tests/report-contract-v1.1.test.js
+
+      - name: Run report renderer v1.1 regression
+        run: node Tests/report-renderer-v1.1.test.js
+
+      - name: Run Architecture and Process v2 regression
+        run: node Tests/architecture-process-v2.test.js
+
+      - name: Run Meeting Type v1 regression
+        run: node Tests/meeting-type-v1.test.js
+
+      - name: Run Semantic Icons v2 regression
+        run: node Tests/semantic-icons-v2.test.js
+
+      - name: Run Telegram Report v1.1 regression
+        run: node Tests/telegram-report-v1.1.test.js
+
+      - name: Run Report Metadata v1.1 regression
+        run: node Tests/build-report-metadata-v1.1.test.js
+
+      - name: Run ten-language v1.1 contract matrix
+        run: node Tests/language-matrix-v1.1.test.js
+
+      - name: Run shared E2E contract corpus
+        run: node Tests/e2e-contract-corpus.test.js

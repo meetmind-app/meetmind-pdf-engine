@@ -1,6 +1,6 @@
 /**
  * MeetMind Executive PDF Engine
- * Layout Engine — Golden Implementation v1.0
+ * Layout Engine — Intelligent Composition v1.8.2
  *
  * Public contract preserved:
  *   MeetMindLayoutEngine.layout(compositionResult, options?)
@@ -8,10 +8,12 @@
  * Responsibilities:
  * - content-driven geometry
  * - Regular -> Compact -> Dense fit evaluation
+ * - adaptive row/column composition for semantic block groups
+ * - minimal coherent transfer to continuation page
  * - deterministic page geometry on the canonical 768 x 512 pt canvas
  * - no clipping/truncation/content deletion
  *
- * Golden reference geometry is used as a target, never as fixture-specific branching.
+ * Golden reference geometry remains a visual target, never a fixture-specific rule.
  */
 (function (global) {
     'use strict';
@@ -90,6 +92,37 @@
         return [];
     }
 
+    function metricDisplayValue(item) {
+        const relation = cleanText(item?.relation).toLowerCase();
+        const current = cleanText(item?.current_value ?? item?.currentValue);
+        const previous = cleanText(item?.previous_value ?? item?.previousValue);
+        const target = cleanText(item?.target_value ?? item?.targetValue);
+        const fallback = cleanText(item?.value ?? item?.primaryValue ?? item?.metric ?? item?.amount);
+
+        if (relation === 'current_to_target' && current && target) return `${current} → ${target}`;
+        if (relation === 'previous_to_current' && previous && current) return `${previous} → ${current}`;
+        if (relation === 'target' && target) return target;
+        if (relation === 'current' && current) return current;
+        return fallback;
+    }
+
+    function metricContextText(item) {
+        const context = cleanText(item?.context);
+        const period = cleanText(item?.target_period ?? item?.targetPeriod);
+        if (!period) return context;
+        if (!context) return period;
+        return context.toLowerCase().includes(period.toLowerCase()) ? context : `${context} · ${period}`;
+    }
+
+    function riskSupplementalText(item) {
+        const impact = cleanText(item?.impact);
+        const mitigation = cleanText(item?.mitigation);
+        const parts = [];
+        if (impact) parts.push(`Impact: ${impact}`);
+        if (mitigation) parts.push(`Mitigation: ${mitigation}`);
+        return parts.join(' ');
+    }
+
     // Deterministic font-independent estimate. Renderer performs the final glyph drawing.
     // Layout intentionally errs slightly high so content is never clipped.
     function charsPerLine(width, fontSize) {
@@ -157,22 +190,30 @@
         const strongSize = mode === MODES.regular ? 6.6 : mode === MODES.compact ? 6.3 : 6.1;
         const bodySize = strongSize;
         const lineHeight = mode === MODES.regular ? 9.0 : mode === MODES.compact ? 8.1 : 7.4;
+        const supplementalSize = Math.max(5.2, bodySize * 0.86);
+        const supplementalLine = Math.max(6.2, mode.smallLine * 0.9);
         const bulletGap = mode === MODES.regular ? 4 : mode === MODES.compact ? 3.3 : 2.7;
-        // sectionHeader() consumes title line + titleContentGap; card padding is real renderer spacing.
         const titleContentGap = mode === MODES.regular ? 6 : mode === MODES.compact ? 5 : 4;
         let h = mode.padY + mode.blockTitleLine + titleContentGap;
+        const isRiskBlock = idOf(block) === 'risks';
 
         for (const item of items) {
             const title = cleanText(item?.title || item?.label || '');
             const body = cleanText(item?.description || item?.details || item?.text || item?.value || (title ? '' : textOf(item)));
+            const supplemental = isRiskBlock ? riskSupplementalText(item) : '';
             const titleLines = title ? lineCount(title, inner, strongSize, 'semibold') : 0;
             const bodyLines = body && body !== title ? lineCount(body, inner, bodySize, 'regular') : 0;
-            h += Math.max(lineHeight, titleLines * lineHeight + bodyLines * lineHeight);
+            const supplementalLines = supplemental ? lineCount(supplemental, inner, supplementalSize, 'regular') : 0;
+            h += Math.max(
+                lineHeight,
+                titleLines * lineHeight
+                    + bodyLines * lineHeight
+                    + supplementalLines * supplementalLine
+                    + (supplementalLines ? 1.5 : 0)
+            );
             h += bulletGap;
         }
 
-        // This is a content boundary, not a guessed safety spacer: the last rendered line
-        // must end before the card's physical bottom padding.
         h += mode.padY;
         return Math.max(32, h);
     }
@@ -207,6 +248,8 @@
         const columns = width >= 300 ? 4 : width >= 200 ? 3 : 2;
         const rows = Math.ceil(items.length / columns);
         const cellW = (width - (columns - 1) * mode.cardGap) / columns;
+        const contextSize = Math.max(5.0, mode.small * 0.88);
+        const contextLine = Math.max(6.0, mode.smallLine * 0.88);
         let total = 0;
         for (let r = 0; r < rows; r++) {
             let rowH = 0;
@@ -214,10 +257,20 @@
                 const item = items[r * columns + c];
                 if (!item) continue;
                 const label = cleanText(item.label || item.title || item.name);
-                const value = cleanText(item.value || item.primaryValue || item.metric);
+                const value = metricDisplayValue(item);
+                const context = metricContextText(item);
+                const innerWidth = cellW - mode.padX * 2;
+                const valueHeight = Math.max(
+                    mode.bodyLine * 1.6,
+                    lineCount(value, innerWidth, mode.body * 1.45, 'bold') * mode.bodyLine
+                );
+                const contextHeight = context
+                    ? lineCount(context, innerWidth, contextSize, 'regular') * contextLine + 1.5
+                    : 0;
                 const h = mode.padY * 2
-                    + Math.max(mode.bodyLine * 1.6, lineCount(value, cellW - mode.padX * 2, mode.body * 1.45) * mode.bodyLine)
-                    + lineCount(label, cellW - mode.padX * 2, mode.small) * mode.smallLine;
+                    + valueHeight
+                    + lineCount(label, innerWidth, mode.small, 'semibold') * mode.smallLine
+                    + contextHeight;
                 rowH = Math.max(rowH, h);
             }
             total += rowH + (r ? mode.cardGap : 0);
@@ -228,7 +281,7 @@
     function measureTasks(block, width, mode) {
         const items = arrayOf(block);
         const taskW = Math.max(80, width * 0.58);
-        let h = blockChrome(mode) + 14; // table header
+        let h = blockChrome(mode) + 14;
         for (const item of items) {
             const task = cleanText(item.task || item.title || item.description || item.text);
             const owner = cleanText(item.owner?.name || item.owner || '');
@@ -319,6 +372,124 @@
         });
     }
 
+    function densityRank(modeName) {
+        return modeName === 'regular' ? 0 : modeName === 'compact' ? 1 : 2;
+    }
+
+    function chooseAdaptivePairLayout(
+        firstId,
+        secondId,
+        map,
+        contentW,
+        mode,
+        preferredRatio = 0.5,
+        unusedWeight = 0.28,
+        maxUnusedRatio = 0.55
+    ) {
+        const first = map.get(firstId);
+        const second = map.get(secondId);
+        if (!first || !second) return null;
+
+        const gap = mode.columnGap;
+        const candidates = [];
+        const ratios = [];
+        for (let r = 0.32; r <= 0.6801; r += 0.04) ratios.push(Number(r.toFixed(2)));
+        ratios.push(preferredRatio);
+
+        [...new Set(ratios)].forEach(ratio => {
+            const leftW = (contentW - gap) * ratio;
+            const rightW = contentW - gap - leftW;
+            if (leftW < 150 || rightW < 150) return;
+            const h1 = measure(first, leftW, mode);
+            const h2 = measure(second, rightW, mode);
+            const rowH = Math.max(h1, h2);
+            const unusedHeight = Math.max(0, rowH - h1) + Math.max(0, rowH - h2);
+            const unusedRatio = rowH > 0 ? unusedHeight / rowH : 0;
+            const severeUnusedPenalty = unusedRatio > maxUnusedRatio
+                ? rowH * (0.45 + Math.min(0.35, unusedRatio - maxUnusedRatio) * 1.5)
+                : 0;
+            candidates.push({
+                kind: 'row',
+                totalHeight: rowH,
+                unusedHeight,
+                unusedRatio,
+                score: rowH
+                    + unusedHeight * unusedWeight
+                    + severeUnusedPenalty
+                    + Math.abs(ratio - preferredRatio) * 3,
+                placements: [
+                    { id: firstId, xOffset: 0, width: leftW, height: rowH, naturalHeight: h1 },
+                    { id: secondId, xOffset: leftW + gap, width: rightW, height: rowH, naturalHeight: h2 }
+                ]
+            });
+        });
+
+        const firstH = measure(first, contentW, mode);
+        const secondH = measure(second, contentW, mode);
+        candidates.push({
+            kind: 'stack',
+            totalHeight: firstH + mode.sectionGap + secondH,
+            unusedHeight: 0,
+            unusedRatio: 0,
+            score: firstH + mode.sectionGap + secondH,
+            placements: [
+                { id: firstId, xOffset: 0, width: contentW, height: firstH, naturalHeight: firstH },
+                { id: secondId, xOffset: 0, width: contentW, height: secondH, naturalHeight: secondH, newRow: true }
+            ]
+        });
+
+        return candidates.reduce((best, candidate) => {
+            if (!best) return candidate;
+            if (candidate.score < best.score - 0.01) return candidate;
+            if (Math.abs(candidate.score - best.score) <= 0.01 && candidate.totalHeight < best.totalHeight) return candidate;
+            return best;
+        }, null);
+    }
+
+    function placeAdaptivePair(pageBlocks, candidate, map, x, startY, modeName, mode) {
+        let cursorY = startY;
+        if (!candidate) return cursorY;
+
+        if (candidate.kind === 'row') {
+            candidate.placements.forEach(placement => {
+                const unusedHeight = Math.max(0, candidate.totalHeight - placement.naturalHeight);
+                const unusedHeightRatio = candidate.totalHeight > 0
+                    ? unusedHeight / candidate.totalHeight
+                    : 0;
+                pageBlocks.push(cloneWithGeometry(
+                    map.get(placement.id),
+                    { x: x + placement.xOffset, y: cursorY, width: placement.width, height: placement.height },
+                    {
+                        density: modeName,
+                        naturalHeight: placement.naturalHeight,
+                        adaptiveComposition: true,
+                        compositionAxis: 'row',
+                        unusedHeight,
+                        unusedHeightRatio
+                    }
+                ));
+            });
+            return cursorY + candidate.totalHeight + mode.sectionGap;
+        }
+
+        candidate.placements.forEach((placement, index) => {
+            pageBlocks.push(cloneWithGeometry(
+                map.get(placement.id),
+                { x, y: cursorY, width: placement.width, height: placement.height },
+                {
+                    density: modeName,
+                    naturalHeight: placement.naturalHeight,
+                    adaptiveComposition: true,
+                    compositionAxis: 'stack',
+                    unusedHeight: 0,
+                    unusedHeightRatio: 0
+                }
+            ));
+            cursorY += placement.height + (index < candidate.placements.length - 1 ? mode.sectionGap : 0);
+        });
+        return cursorY + mode.sectionGap;
+    }
+
     function buildPage(blocks, modeName, options = {}) {
         const mode = MODES[modeName];
         const map = byId(blocks);
@@ -339,50 +510,60 @@
         placeFull('header', 39);
         placeFull('meetingStats', 17);
 
-        // Golden row 1: Summary | Metrics. Width ratio is a visual token, height remains content-driven.
         const summary = map.get('executiveSummary');
         const metrics = map.get('keyMetrics');
         if (summary && metrics) {
-            const gap = mode.columnGap;
-            const leftW = (contentW - gap) * 0.435;
-            const rightW = contentW - gap - leftW;
-            const h1 = measure(summary, leftW, mode);
-            const h2 = measure(metrics, rightW, mode);
-            const rowH = Math.max(h1, h2);
-            pageBlocks.push(cloneWithGeometry(summary, { x, y, width: leftW, height: rowH }, { density: modeName, naturalHeight: h1 }));
-            pageBlocks.push(cloneWithGeometry(metrics, { x: x + leftW + gap, y, width: rightW, height: rowH }, { density: modeName, naturalHeight: h2 }));
-            y += rowH + mode.sectionGap;
+            if (options.adaptiveExecutive === true) {
+                const candidate = chooseAdaptivePairLayout(
+                    'executiveSummary',
+                    'keyMetrics',
+                    map,
+                    contentW,
+                    mode,
+                    0.435,
+                    0.72,
+                    0.38
+                );
+                y = placeAdaptivePair(pageBlocks, candidate, map, x, y, modeName, mode);
+            } else {
+                const gap = mode.columnGap;
+                const leftW = (contentW - gap) * 0.435;
+                const rightW = contentW - gap - leftW;
+                const h1 = measure(summary, leftW, mode);
+                const h2 = measure(metrics, rightW, mode);
+                const rowH = Math.max(h1, h2);
+                pageBlocks.push(cloneWithGeometry(summary, { x, y, width: leftW, height: rowH }, { density: modeName, naturalHeight: h1 }));
+                pageBlocks.push(cloneWithGeometry(metrics, { x: x + leftW + gap, y, width: rightW, height: rowH }, { density: modeName, naturalHeight: h2 }));
+                y += rowH + mode.sectionGap;
+            }
         } else {
             if (summary) placeFull('executiveSummary');
             if (metrics) placeFull('keyMetrics');
         }
 
-        // Executive semantic blocks are content-adaptive on multi-page composition.
-        // No report content is hardcoded: candidate geometry is scored from measured block heights.
-        // The one-page Golden keeps its established equal-column composition unless explicitly enabled.
         const trio = ['insights','decisions','risks'].filter(id => map.has(id));
         if (trio.length) {
             const gap = mode.columnGap;
 
             const rowCandidate = (rows) => {
                 let totalH = 0;
+                let unusedHeight = 0;
                 const placements = [];
                 rows.forEach((rowIds, rowIndex) => {
                     const colW = (contentW - gap * (rowIds.length - 1)) / rowIds.length;
                     const hs = rowIds.map(id => measure(map.get(id), colW, mode));
                     const rowH = Math.max(...hs);
+                    unusedHeight += hs.reduce((sum, h) => sum + Math.max(0, rowH - h), 0);
                     totalH += rowH + (rowIndex < rows.length - 1 ? mode.sectionGap : 0);
                     placements.push({ rowIds, colW, hs, rowH });
                 });
-                return { totalH, placements };
+                return { totalH, unusedHeight, score: totalH + unusedHeight * 0.24, placements };
             };
 
             let chosen;
             if (options.adaptiveExecutive === true && trio.length > 1) {
                 const candidates = [];
-                // All blocks in one horizontal row.
                 candidates.push(rowCandidate([trio]));
-                // Every 2+1 permutation is considered; measurement decides which block deserves full width.
                 if (trio.length === 3) {
                     trio.forEach(fullId => {
                         const pair = trio.filter(id => id !== fullId);
@@ -390,9 +571,12 @@
                         candidates.push(rowCandidate([[fullId], pair]));
                     });
                 }
-                // Full-width vertical stack is a valid fallback for very text-heavy blocks.
                 candidates.push(rowCandidate(trio.map(id => [id])));
-                chosen = candidates.reduce((best, c) => !best || c.totalH < best.totalH ? c : best, null);
+                chosen = candidates.reduce((best, c) => {
+                    if (!best || c.score < best.score - 0.01) return c;
+                    if (Math.abs(c.score - best.score) <= 0.01 && c.totalH < best.totalH) return c;
+                    return best;
+                }, null);
             } else {
                 chosen = rowCandidate([trio]);
             }
@@ -402,41 +586,46 @@
                     pageBlocks.push(cloneWithGeometry(
                         map.get(id),
                         { x: x + i * (row.colW + gap), y, width: row.colW, height: row.rowH },
-                        { density: modeName, naturalHeight: row.hs[i], adaptiveComposition: options.adaptiveExecutive === true }
+                        {
+                            density: modeName,
+                            naturalHeight: row.hs[i],
+                            adaptiveComposition: options.adaptiveExecutive === true,
+                            unusedHeight: Math.max(0, row.rowH - row.hs[i])
+                        }
                     ));
                 });
                 y += row.rowH + mode.sectionGap;
             });
         }
 
-        // Golden row 3: Tasks | Architecture, 39/61.
         const tasks = map.get('tasks');
         const architecture = map.get('architecture');
         if (tasks && architecture) {
-            const gap = mode.columnGap;
-            const leftW = (contentW - gap) * 0.39;
-            const rightW = contentW - gap - leftW;
-            const h1 = measure(tasks, leftW, mode);
-            const h2 = measure(architecture, rightW, mode);
-            const rowH = Math.max(h1, h2);
-            pageBlocks.push(cloneWithGeometry(tasks, { x, y, width: leftW, height: rowH }, { density: modeName, naturalHeight: h1 }));
-            pageBlocks.push(cloneWithGeometry(architecture, { x: x + leftW + gap, y, width: rightW, height: rowH }, { density: modeName, naturalHeight: h2 }));
-            y += rowH + mode.sectionGap;
+            if (options.adaptiveExecutive === true) {
+                const candidate = chooseAdaptivePairLayout('tasks', 'architecture', map, contentW, mode, 0.39);
+                y = placeAdaptivePair(pageBlocks, candidate, map, x, y, modeName, mode);
+            } else {
+                const gap = mode.columnGap;
+                const leftW = (contentW - gap) * 0.39;
+                const rightW = contentW - gap - leftW;
+                const h1 = measure(tasks, leftW, mode);
+                const h2 = measure(architecture, rightW, mode);
+                const rowH = Math.max(h1, h2);
+                pageBlocks.push(cloneWithGeometry(tasks, { x, y, width: leftW, height: rowH }, { density: modeName, naturalHeight: h1 }));
+                pageBlocks.push(cloneWithGeometry(architecture, { x: x + leftW + gap, y, width: rightW, height: rowH }, { density: modeName, naturalHeight: h2 }));
+                y += rowH + mode.sectionGap;
+            }
         } else {
             if (tasks) placeFull('tasks');
             if (architecture) placeFull('architecture');
         }
 
-        // 6E: Owners + Footer are one visual bottom band, as in the approved Golden.
-        // They remain independent optional blocks: either may be disabled.
         const owners = map.get('owners');
         const footer = map.get('footer');
         const bottomBandH = 28;
         const bottomBandY = PAGE.height - mode.marginBottom - bottomBandH;
 
         if (owners || footer) {
-            // If semantic rows already consume the bottom band, this attempt must fail
-            // and density/pagination remains responsible for recovery.
             const bandY = Math.max(y, bottomBandY);
 
             if (owners) {
@@ -467,10 +656,6 @@
         };
     }
 
-
-    // Continuation pages deliberately use a roomier vertical composition.
-    // Once the document has already expanded to page 2, preserving dense first-page
-    // typography wastes available space and reduces readability.
     function buildContinuationPage(blocks, modeName) {
         const mode = MODES[modeName];
         const map = byId(blocks);
@@ -491,28 +676,36 @@
         const footer = map.get('footer');
         const bottomBandH = (owners || footer) ? 28 : 0;
         const bottomBandY = PAGE.height - mode.marginBottom - bottomBandH;
-        const naturalContentH = natural.reduce((sum, item) => sum + item.h, 0) + Math.max(0, natural.length - 1) * mode.sectionGap;
+        const interBlockGap = Math.max(0, natural.length - 1) * mode.sectionGap;
         const availableContentH = Math.max(0, bottomBandY - y - (bottomBandH ? mode.sectionGap : 0));
+        const naturalBlocksH = natural.reduce((sum, item) => sum + item.h, 0);
+        const naturalContentH = naturalBlocksH + interBlockGap;
 
-        // Page-aware density is derived from actual free space, never from report values or benchmark names.
-        // Cap keeps typography within the approved design range while allowing sparse continuation pages to breathe.
-        const contentScale = naturalContentH > 0
-            ? Math.max(1, Math.min(1.55, availableContentH / naturalContentH))
-            : 1;
+        if (naturalContentH > availableContentH + 0.01) {
+            return { mode: modeName, blocks: pageBlocks, usedHeight: PAGE.height + 1, fits: false };
+        }
 
+        const distributable = Math.max(0, availableContentH - naturalContentH);
         natural.forEach((item, index) => {
-            const scaledH = item.h * contentScale;
-            pageBlocks.push(cloneWithGeometry(item.block, { x, y, width: contentW, height: scaledH }, {
+            const share = naturalBlocksH > 0 ? item.h / naturalBlocksH : 1 / Math.max(1, natural.length);
+            const allocatedHeight = item.h + distributable * share;
+            const contentScale = item.h > 0
+                ? Math.max(1, Math.min(1.35, allocatedHeight / item.h))
+                : 1;
+
+            pageBlocks.push(cloneWithGeometry(item.block, { x, y, width: contentW, height: allocatedHeight }, {
                 density: modeName,
                 continuation: true,
                 naturalHeight: item.h,
-                contentScale
+                allocatedHeight,
+                contentScale,
+                fillAvailableHeight: true
             }));
-            y += scaledH + (index < natural.length - 1 ? mode.sectionGap * contentScale : mode.sectionGap);
+            y += allocatedHeight + (index < natural.length - 1 ? mode.sectionGap : 0);
         });
 
         if (owners || footer) {
-            const bandY = Math.max(y, bottomBandY);
+            const bandY = bottomBandY;
             if (owners) {
                 pageBlocks.push(cloneWithGeometry(owners, { x, y: bandY, width: contentW, height: bottomBandH }, {
                     density: modeName, continuation: true, sharedBottomBand: true
@@ -532,33 +725,73 @@
 
     function trySemanticTwoPage(blocks) {
         const map = byId(blocks);
-        const movable = ['tasks', 'architecture'].filter(id => map.has(id));
-        if (!movable.length) return null;
+        const operational = ['tasks', 'architecture'].filter(id => map.has(id));
+        if (!operational.length) return null;
 
-        // Page 1 keeps the executive narrative and chooses executive-block geometry from measured content.
-        // Page 2 receives operational detail. Header/footer are repeated by contract.
-        const pageOneIds = ['header','meetingStats','executiveSummary','keyMetrics','insights','decisions','risks','footer'];
-        const pageTwoIds = ['header', ...movable, 'owners', 'footer'];
-        const pageOneBlocks = pageOneIds.map(id => map.get(id)).filter(Boolean);
-        const pageTwoBlocks = pageTwoIds.map(id => map.get(id)).filter(Boolean);
-
-        let first = null;
-        for (const modeName of ['regular','compact','dense']) {
-            const attempt = buildPage(pageOneBlocks, modeName, { adaptiveExecutive: true });
-            if (attempt.fits) { first = attempt; break; }
+        const hasOwners = map.has('owners');
+        const transferCandidates = [];
+        operational.forEach(id => {
+            transferCandidates.push([id]);
+            if (hasOwners) transferCandidates.push([id, 'owners']);
+        });
+        if (operational.length === 2) {
+            transferCandidates.push(['tasks', 'architecture']);
+            if (hasOwners) transferCandidates.push(['tasks', 'architecture', 'owners']);
         }
-        if (!first) return null;
 
-        let second = null;
-        for (const modeName of ['regular','compact','dense']) {
-            const attempt = buildContinuationPage(pageTwoBlocks, modeName);
-            if (attempt.fits) { second = attempt; break; }
+        const uniqueCandidates = [];
+        const seen = new Set();
+        transferCandidates.forEach(ids => {
+            const ordered = ORDER.filter(id => ids.includes(id));
+            const key = ordered.join('|');
+            if (!seen.has(key)) {
+                seen.add(key);
+                uniqueCandidates.push(ordered);
+            }
+        });
+
+        let best = null;
+        for (const transfer of uniqueCandidates) {
+            const pageOneIds = ORDER.filter(id => map.has(id) && !transfer.includes(id));
+            const pageTwoIds = ['header', ...ORDER.filter(id => transfer.includes(id) && !['header','footer'].includes(id)), 'footer'];
+            const pageOneBlocks = pageOneIds.map(id => map.get(id)).filter(Boolean);
+            const pageTwoBlocks = pageTwoIds.map(id => map.get(id)).filter(Boolean);
+
+            let first = null;
+            for (const modeName of ['regular','compact','dense']) {
+                const attempt = buildPage(pageOneBlocks, modeName, { adaptiveExecutive: true });
+                if (attempt.fits) { first = attempt; break; }
+            }
+            if (!first) continue;
+
+            let second = null;
+            for (const modeName of ['regular','compact','dense']) {
+                const attempt = buildContinuationPage(pageTwoBlocks, modeName);
+                if (attempt.fits) { second = attempt; break; }
+            }
+            if (!second) continue;
+
+            const contentW = PAGE.width - MODES.regular.marginX * 2;
+            const movedMass = transfer.reduce((sum, id) => {
+                const block = map.get(id);
+                if (!block) return sum;
+                return sum + (id === 'owners' ? 8 : measure(block, contentW, MODES.regular));
+            }, 0);
+            const score = transfer.length * 1000
+                + movedMass
+                + densityRank(first.mode) * 120
+                + densityRank(second.mode) * 40;
+
+            if (!best || score < best.score) {
+                best = { score, transfer, first, second };
+            }
         }
-        if (!second) return null;
+
+        if (!best) return null;
 
         return [
-            { id:'page-1', number:1, index:0, kind:'executive', size:PAGE, density:first.mode, blocks:first.blocks },
-            { id:'page-2', number:2, index:1, kind:'continuation', size:PAGE, density:second.mode, blocks:second.blocks }
+            { id:'page-1', number:1, index:0, kind:'executive', size:PAGE, density:best.first.mode, blocks:best.first.blocks, transferred:best.transfer },
+            { id:'page-2', number:2, index:1, kind:'continuation', size:PAGE, density:best.second.mode, blocks:best.second.blocks, transferred:best.transfer }
         ];
     }
 
@@ -588,8 +821,8 @@
             current.push(cloneWithGeometry(block, {
                 x: mode.marginX, y,
                 width: contentW,
-                height: Math.min(h, maxY - mode.marginTop)
-            }, { density: modeName, paginated: true, naturalHeight: h }));
+                height: h
+            }, { density: modeName, paginated: true, naturalHeight: h, unsplitFallback: true }));
             y += h + mode.sectionGap;
         }
         pushPage();
@@ -605,9 +838,12 @@
                     diagnostics.push({ level: 'error', code: 'INVALID_GEOMETRY', blockId: idOf(block) });
                 }
                 if (g && (g.x < 0 || g.y < 0 || g.x + g.width > PAGE.width + .1 || g.y + g.height > PAGE.height + .1)) {
-                    diagnostics.push({ level: 'warning', code: 'OUTSIDE_PAGE', blockId: idOf(block), geometry: g });
+                    diagnostics.push({ level: 'error', code: 'OUTSIDE_PAGE', blockId: idOf(block), geometry: g });
                 }
             }
+        }
+        if (pages.length > 2) {
+            diagnostics.push({ level: 'warning', code: 'MORE_THAN_TWO_PAGES', pageCount: pages.length });
         }
         return diagnostics;
     }
@@ -631,8 +867,8 @@
         let selected = null;
         const attempts = [];
         for (const modeName of ['regular','compact','dense']) {
-            const attempt = buildPage(blocks, modeName);
-            attempts.push({ density: modeName, usedHeight: attempt.usedHeight, fits: attempt.fits });
+            const attempt = buildPage(blocks, modeName, { adaptiveExecutive: true });
+            attempts.push({ density: modeName, usedHeight: attempt.usedHeight, fits: attempt.fits, adaptive: true });
             if (attempt.fits) {
                 selected = attempt;
                 break;
@@ -650,9 +886,6 @@
                 blocks: selected.blocks
             }];
         } else {
-            // Prefer semantic two-page composition over blind sequential pagination.
-            // This keeps Insights / Decisions / Risks in the efficient three-column row,
-            // repeats header/footer, and lets continuation content use a roomier density.
             const semanticPages = trySemanticTwoPage(blocks);
             if (semanticPages) {
                 pages = semanticPages;
@@ -678,7 +911,7 @@
     }
 
     global.MeetMindLayoutEngine = Object.freeze({
-        version: 'golden-1.7.2-adaptive-spacing',
+        version: 'golden-1.8.2-intelligent-composition',
         PAGE,
         MODES,
         layout

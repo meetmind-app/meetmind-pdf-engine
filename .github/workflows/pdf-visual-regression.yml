@@ -1,0 +1,75 @@
+name: PDF Visual Regression
+
+on:
+  push:
+    branches:
+      - pdf-layout-hardening-v1
+    paths:
+      - 'Composition_Engine/**'
+      - 'Layout_Engine/**'
+      - 'Renderer/**'
+      - 'core/**'
+      - 'drawing/**'
+      - 'fonts/**'
+      - 'executive-slide-engine.js'
+      - 'Tests/**'
+      - '.github/workflows/pdf-visual-regression.yml'
+  pull_request:
+    paths:
+      - 'Composition_Engine/**'
+      - 'Layout_Engine/**'
+      - 'Renderer/**'
+      - 'core/**'
+      - 'drawing/**'
+      - 'fonts/**'
+      - 'executive-slide-engine.js'
+      - 'Tests/**'
+      - '.github/workflows/pdf-visual-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  render-fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install visual regression dependencies
+        run: npm install --no-save playwright@1.55.0 pdf-lib@1.17.1 @pdf-lib/fontkit@1.1.1
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Generate regression PDFs
+        run: node Tests/visual-regression-runner.mjs
+
+      - name: Install PDF renderer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
+
+      - name: Render PDFs to PNG
+        run: |
+          set -euo pipefail
+          mkdir -p Tests/visual-output/renders
+          for pdf in Tests/visual-output/*.pdf; do
+            base="$(basename "$pdf" .pdf)"
+            echo "Rendering $base"
+            pdfinfo "$pdf" | grep -E '^(Pages|Page size|File size):' || true
+            pdftoppm -png -r 144 "$pdf" "Tests/visual-output/renders/$base"
+          done
+
+      - name: Upload visual regression artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-visual-regression
+          path: Tests/visual-output/
+          if-no-files-found: error
+          retention-days: 14

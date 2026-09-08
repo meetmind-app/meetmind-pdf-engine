@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.1",
+  "language": "ru",
+  "title": "Рост выручки и подготовка пилота",
+  "meeting_type": "strategy",
+  "meeting_type_label": "Стратегическая встреча",
+  "executive_brief": "Команда зафиксировала текущие показатели, целевые значения и критерии пилота. Цели и сроки отражены только там, где они явно прозвучали на встрече.",
+  "key_metrics": [
+    {
+      "label": "ARR",
+      "value": "8,4M → 10M",
+      "context": "Цель к Q4",
+      "relation": "current_to_target",
+      "current_value": "8,4M",
+      "previous_value": "",
+      "target_value": "10M",
+      "target_period": "Q4"
+    },
+    {
+      "label": "Конверсия",
+      "value": "18% → 24%",
+      "context": "Рост относительно текущего уровня",
+      "relation": "current_to_target",
+      "current_value": "18%",
+      "previous_value": "",
+      "target_value": "24%",
+      "target_period": ""
+    },
+    {
+      "label": "COGS",
+      "value": "< 20% выручки",
+      "context": "Целевой предел",
+      "relation": "target",
+      "current_value": "",
+      "previous_value": "",
+      "target_value": "< 20% выручки",
+      "target_period": ""
+    }
+  ],
+  "key_takeaways": [
+    {
+      "title": "Проверка оплаты важнее расширения функциональности",
+      "details": "Следующий этап должен подтвердить willingness to pay до увеличения продуктового scope.",
+      "business_priority": "high"
+    }
+  ],
+  "decisions": [
+    {
+      "title": "Запустить ограниченный пилот",
+      "details": "Пилот ограничивается текущими сценариями до появления первых платящих клиентов.",
+      "business_priority": "high"
+    }
+  ],
+  "risks": [
+    {
+      "title": "Платёжный контур",
+      "description": "Международные рекуррентные платежи могут потребовать посредника.",
+      "business_priority": "high",
+      "impact": "Рост комиссии и снижение маржи",
+      "mitigation": "Проверить альтернативных провайдеров до масштабирования"
+    }
+  ],
+  "tasks": [
+    {
+      "task": "Проверить готовность платить на первых клиентах",
+      "owner": "Николай",
+      "due_date": "до следующего этапа разработки",
+      "status": "open",
+      "business_priority": "high",
+      "depends_on": []
+    }
+  ],
+  "architecture": {
+    "sections": [
+      {
+        "title": "Входные данные",
+        "layout": "components",
+        "items": [
+          { "title": "Каталог", "description": "Товары и атрибуты без обязательной последовательности.", "type": "data", "business_priority": "high" }
+        ]
+      },
+      {
+        "title": "Обработка",
+        "layout": "process",
+        "items": [
+          { "title": "Normalize", "description": "Нормализация данных.", "type": "process", "business_priority": "high" },
+          { "title": "Generate", "description": "Генерация целевого результата после нормализации.", "type": "process", "business_priority": "high" }
+        ]
+      }
+    ]
+  },
+  "owners": [
+    { "name": "Николай", "responsibility": "Принять решение о продолжении пилота" }
+  ],
+  "participants": [],
+  "stats": {
+    "duration_seconds": 2700
+  }
+}

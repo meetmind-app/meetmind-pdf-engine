@@ -457,7 +457,7 @@
             const due=clean(t?.due_date||t?.dueDate||t?.deadline||'');
             const taskLines=wrap(ctx,task,taskW-5,cs);
             const ownerLines=wrap(ctx,owner,ownerW-5,cs);
-            const dueLines=wrap(ctx,due,dueW-5,cs);
+            const dueLines=wrap(ctx,due,dueW-9,cs);
             const lines=Math.max(1,taskLines.length,ownerLines.length,dueLines.length);
             return {task,owner,due,taskLines,ownerLines,dueLines,rowH:Math.max(cs.lineHeight+3,lines*cs.lineHeight+3)};
         });
@@ -473,9 +473,11 @@
             r.taskLines.forEach((l,j)=>ctx.text(l,{x:xs[1]+2,y:y+2+j*cs.lineHeight,size:cs.size,font:cs.font,color:cs.color}));
             r.ownerLines.forEach((l,j)=>ctx.text(l,{x:xs[2]+2,y:y+2+j*cs.lineHeight,size:cs.size,font:cs.font,color:cs.color}));
             if(r.due){
-                const pillW=Math.min(dueW-4,measure(ctx,r.due,cs)+8);
-                ctx.rect({x:xs[3]+2,y:y+1,width:pillW,height:cs.lineHeight+3,fill:'purpleSoft',stroke:'purpleSoft',borderWidth:0,radius:3});
-                r.dueLines.slice(0,1).forEach(l=>ctx.text(l,{x:xs[3]+6,y:y+2,size:cs.size,font:'medium',color:'purplePrimary'}));
+                const widestLine=Math.max(...r.dueLines.map(line=>measure(ctx,line,cs)),0);
+                const pillW=Math.min(dueW-4,Math.max(18,widestLine+8));
+                const pillH=Math.min(r.rowH-1,Math.max(cs.lineHeight+3,r.dueLines.length*cs.lineHeight+3));
+                ctx.rect({x:xs[3]+2,y:y+1,width:pillW,height:pillH,fill:'purpleSoft',stroke:'purpleSoft',borderWidth:0,radius:3});
+                r.dueLines.forEach((line,j)=>ctx.text(line,{x:xs[3]+6,y:y+2+j*cs.lineHeight,size:cs.size,font:'medium',color:'purplePrimary'}));
             }
             y+=r.rowH+adaptiveRowGap;
             ctx.line({x1:innerX,y1:y,x2:innerX+innerW,y2:y,color:'dividerDefault',thickness:.25});
@@ -630,7 +632,7 @@
 
 
     host.blockRenderers=Object.freeze({
-        version:'1.6.4-i18n-complete',
+        version:'1.6.5-p0-content-integrity',
         header:renderHeader,
         stats:renderStats,
         meetingStats:renderStats,
