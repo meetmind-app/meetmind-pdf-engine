@@ -1,10 +1,106 @@
 /**
- * MeetMind Executive PDF Engine
- * RenderContext — Golden Release 1.0
+ * LOREVI Executive PDF Engine
+ * RenderContext — RTL-safe PDF text hotfix
  *
- * Page-scoped adapter between top-left Layout coordinates and pdf-lib's
- * bottom-left drawing coordinates. Also resolves Inter fonts and HEX colors.
+ * pdf-lib does not apply Arabic shaping or the Unicode bidi algorithm when
+ * drawing strings. For ar/fa we therefore convert Arabic letters to their
+ * contextual presentation forms and reorder visual runs before drawText().
  */
+
+const ARABIC_FORMS = Object.freeze({
+  '\u0621':['\uFE80','\uFE80',null,null], '\u0622':['\uFE81','\uFE82',null,null],
+  '\u0623':['\uFE83','\uFE84',null,null], '\u0624':['\uFE85','\uFE86',null,null],
+  '\u0625':['\uFE87','\uFE88',null,null], '\u0626':['\uFE89','\uFE8A','\uFE8B','\uFE8C'],
+  '\u0627':['\uFE8D','\uFE8E',null,null], '\u0628':['\uFE8F','\uFE90','\uFE91','\uFE92'],
+  '\u0629':['\uFE93','\uFE94',null,null], '\u062A':['\uFE95','\uFE96','\uFE97','\uFE98'],
+  '\u062B':['\uFE99','\uFE9A','\uFE9B','\uFE9C'], '\u062C':['\uFE9D','\uFE9E','\uFE9F','\uFEA0'],
+  '\u062D':['\uFEA1','\uFEA2','\uFEA3','\uFEA4'], '\u062E':['\uFEA5','\uFEA6','\uFEA7','\uFEA8'],
+  '\u062F':['\uFEA9','\uFEAA',null,null], '\u0630':['\uFEAB','\uFEAC',null,null],
+  '\u0631':['\uFEAD','\uFEAE',null,null], '\u0632':['\uFEAF','\uFEB0',null,null],
+  '\u0633':['\uFEB1','\uFEB2','\uFEB3','\uFEB4'], '\u0634':['\uFEB5','\uFEB6','\uFEB7','\uFEB8'],
+  '\u0635':['\uFEB9','\uFEBA','\uFEBB','\uFEBC'], '\u0636':['\uFEBD','\uFEBE','\uFEBF','\uFEC0'],
+  '\u0637':['\uFEC1','\uFEC2','\uFEC3','\uFEC4'], '\u0638':['\uFEC5','\uFEC6','\uFEC7','\uFEC8'],
+  '\u0639':['\uFEC9','\uFECA','\uFECB','\uFECC'], '\u063A':['\uFECD','\uFECE','\uFECF','\uFED0'],
+  '\u0641':['\uFED1','\uFED2','\uFED3','\uFED4'], '\u0642':['\uFED5','\uFED6','\uFED7','\uFED8'],
+  '\u0643':['\uFED9','\uFEDA','\uFEDB','\uFEDC'], '\u0644':['\uFEDD','\uFEDE','\uFEDF','\uFEE0'],
+  '\u0645':['\uFEE1','\uFEE2','\uFEE3','\uFEE4'], '\u0646':['\uFEE5','\uFEE6','\uFEE7','\uFEE8'],
+  '\u0647':['\uFEE9','\uFEEA','\uFEEB','\uFEEC'], '\u0648':['\uFEED','\uFEEE',null,null],
+  '\u0649':['\uFEEF','\uFEF0',null,null], '\u064A':['\uFEF1','\uFEF2','\uFEF3','\uFEF4'],
+  // Persian additions (presentation forms available in Noto Sans Arabic).
+  '\u067E':['\uFB56','\uFB57','\uFB58','\uFB59'], '\u0686':['\uFB7A','\uFB7B','\uFB7C','\uFB7D'],
+  '\u0698':['\uFB8A','\uFB8B',null,null], '\u06A9':['\uFB8E','\uFB8F','\uFB90','\uFB91'],
+  '\u06AF':['\uFB92','\uFB93','\uFB94','\uFB95'], '\u06CC':['\uFBFC','\uFBFD','\uFBFE','\uFBFF']
+});
+
+const RTL_MARK_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/;
+const ARABIC_CHAR_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+const COMBINING_RE = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/;
+const BREAK_JOIN_RE = /[\u200C\u200D]/;
+
+function previousBase(chars, index) {
+  for (let i = index - 1; i >= 0; i -= 1) {
+    if (COMBINING_RE.test(chars[i])) continue;
+    if (BREAK_JOIN_RE.test(chars[i]) || /\s/.test(chars[i])) return null;
+    return chars[i];
+  }
+  return null;
+}
+
+function nextBase(chars, index) {
+  for (let i = index + 1; i < chars.length; i += 1) {
+    if (COMBINING_RE.test(chars[i])) continue;
+    if (BREAK_JOIN_RE.test(chars[i]) || /\s/.test(chars[i])) return null;
+    return chars[i];
+  }
+  return null;
+}
+
+function canJoinFromLeft(char) {
+  const forms = ARABIC_FORMS[char];
+  return Boolean(forms && forms[1]);
+}
+
+function canJoinToRight(char) {
+  const forms = ARABIC_FORMS[char];
+  return Boolean(forms && forms[2]);
+}
+
+function shapeArabic(text) {
+  const chars = Array.from(String(text ?? ''));
+  return chars.map((char, index) => {
+    const forms = ARABIC_FORMS[char];
+    if (!forms) return char === '\u200C' || char === '\u200D' ? '' : char;
+    const prev = previousBase(chars, index);
+    const next = nextBase(chars, index);
+    const joinsPrev = Boolean(prev && canJoinToRight(prev) && canJoinFromLeft(char));
+    const joinsNext = Boolean(next && canJoinToRight(char) && canJoinFromLeft(next));
+    if (joinsPrev && joinsNext && forms[3]) return forms[3];
+    if (joinsPrev && forms[1]) return forms[1];
+    if (joinsNext && forms[2]) return forms[2];
+    return forms[0] || char;
+  }).join('');
+}
+
+function reverseArabicRun(value) {
+  const units = [];
+  for (const char of Array.from(value)) {
+    if (COMBINING_RE.test(char) && units.length) units[units.length - 1] += char;
+    else units.push(char);
+  }
+  return units.reverse().join('');
+}
+
+function visualRtlText(value) {
+  const logical = String(value ?? '');
+  if (!RTL_MARK_RE.test(logical)) return logical;
+  const shaped = shapeArabic(logical);
+  // Keep Latin/API/numeric tokens internally LTR, but reverse their position
+  // among RTL runs. This covers mixed Persian/Arabic business text such as
+  // "ارسال به API" and "Google Calendar" without reversing API/Google.
+  const runs = shaped.match(/[A-Za-z0-9][A-Za-z0-9._:/+%#@-]*(?:\s+[A-Za-z0-9][A-Za-z0-9._:/+%#@-]*)*|[^A-Za-z0-9]+/g) || [shaped];
+  return runs.reverse().map(run => ARABIC_CHAR_RE.test(run) ? reverseArabicRun(run) : run).join('');
+}
+
 export class RenderContext {
   constructor(drawingSurface, tokens = null, options = {}) {
     this.surface = drawingSurface;
@@ -67,7 +163,8 @@ export class RenderContext {
       text(value, options = {}) {
         const sizePt = Number(options.size || 8);
         const topY = Number(options.y || 0);
-        const renderedValue = String(value ?? '');
+        const logicalValue = String(value ?? '');
+        const renderedValue = isRtl ? visualRtlText(logicalValue) : logicalValue;
         const renderedFont = font(options.font);
         const textWidth = isRtl ? renderedFont.widthOfTextAtSize(renderedValue, sizePt) : 0;
         return root.surface.drawText(renderedValue, {
@@ -125,8 +222,6 @@ export class RenderContext {
         const topY = Number(options.y || 0);
         return root.surface.drawSvgPath(path, {
           x: mirrorX(options.x, size),
-          // pdf-lib SVG paths use their own local Y axis. Anchor the 24x24
-          // icon viewport at the requested top-left position.
           y: height - topY - size,
           scale,
           color: options.fill ? color(options.fill) : undefined,
@@ -146,7 +241,8 @@ export class RenderContext {
       },
 
       measureText(text, fontName, sizePt) {
-        return root.surface.measureText(text, fontName, sizePt);
+        const value = isRtl ? visualRtlText(text) : text;
+        return root.surface.measureText(value, fontName, sizePt);
       },
       getFont(name) { return root.surface.getFont(name); }
     };
@@ -155,3 +251,5 @@ export class RenderContext {
   finalize() {}
   save() { return this.surface.save(); }
 }
+
+export { shapeArabic, visualRtlText };
