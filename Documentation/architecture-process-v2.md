@@ -1,6 +1,6 @@
 # Architecture & Process v2
 
-Planned after P0 content integrity and intelligent 1/2-page composition hardening.
+Status: implemented across the extraction contract, canonical normalizers, PDF renderer, and Web Report. Production prompt rollout remains separately gated on an isolated n8n evaluation.
 
 ## Product rule
 
@@ -32,3 +32,10 @@ Expected canonical shape:
 5. Regression cases: true process, mixed system architecture, no-sequence discussion, empty architecture, long multilingual content and RTL.
 
 Hard rule: never infer a process arrow solely to make the layout look better.
+
+## Acceptance evidence
+
+- GPT contract requires canonical root and section `mode`, with matching legacy `layout` values.
+- Mixed, ambiguous, and empty architecture defaults to non-directional `components`; explicit process sections remain ordered.
+- PDF and Web render connectors only for confirmed process sections and preserve RTL direction.
+- Regression coverage includes true process, components, mixed, empty, RU/EN dense layouts, Persian RTL, and prompt-injection evidence isolation.
