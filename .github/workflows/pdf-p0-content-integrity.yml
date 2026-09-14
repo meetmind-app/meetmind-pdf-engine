@@ -52,6 +52,9 @@ jobs:
       - name: Run Semantic Icons v2 regression
         run: node Tests/semantic-icons-v2.test.js
 
+      - name: Run Design and Icon System v2 regression
+        run: node Tests/design-icon-system-v2.test.js
+
       - name: Run Telegram Report v1.1 regression
         run: node Tests/telegram-report-v1.1.test.js
 

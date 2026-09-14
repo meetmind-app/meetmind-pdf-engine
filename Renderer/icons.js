@@ -2,9 +2,9 @@
  * MeetMind AI
  * Executive Slide Engine
  *
- * Icon Registry
+ * Visual Icon System v2
  *
- * Static SVG geometry for Executive PDF v1.0.
+ * Canonical SVG geometry and the shared Lucide-to-PDF path adapter.
  *
  * Lucide is used only as the source of canonical icon geometry.
  * This module has no runtime dependency on Lucide or any other library.
@@ -13,15 +13,16 @@
  * - user-facing strings;
  * - localization dictionaries;
  * - business block mappings;
- * - renderer logic;
- * - PDF drawing logic;
- * - sizes, colors, or coordinates;
- * - dynamic SVG generation.
+ * - report-data mutation;
+ * - runtime Lucide dependency.
  *
  * Public contract:
  *
  * ExecutiveSlideEngine.icons.get(name)
  * ExecutiveSlideEngine.icons.has(name)
+ * ExecutiveSlideEngine.icons.draw(context, name, options)
+ * ExecutiveSlideEngine.icons.toPathData(name)
+ * ExecutiveSlideEngine.icons.list()
  *
  * Returned icon objects are immutable.
  * Callers must treat them as read-only and must not modify them.
@@ -40,6 +41,7 @@
     'use strict';
 
     const engine = global.ExecutiveSlideEngine || {};
+    const ICON_SYSTEM_VERSION = '2.0.0';
     const FALLBACK_ICON_NAME = 'circle-question-mark';
     const VIEW_BOX = '0 0 24 24';
 
@@ -516,6 +518,108 @@
         return name;
     }
 
+    function nodeToPath(tag, attrs = {}) {
+        const number = value => Number(value || 0);
+
+        if (tag === 'path') return String(attrs.d || '');
+        if (tag === 'line') {
+            return `M ${number(attrs.x1)} ${number(attrs.y1)} L ${number(attrs.x2)} ${number(attrs.y2)}`;
+        }
+        if (tag === 'polyline') {
+            const points = String(attrs.points || '').trim().split(/\s+/)
+                .map(value => value.split(',').map(Number))
+                .filter(point => point.length === 2 && point.every(Number.isFinite));
+            if (!points.length) return '';
+            return `M ${points[0][0]} ${points[0][1]} ` +
+                points.slice(1).map(point => `L ${point[0]} ${point[1]}`).join(' ');
+        }
+        if (tag === 'rect') {
+            const x = number(attrs.x);
+            const y = number(attrs.y);
+            const width = number(attrs.width);
+            const height = number(attrs.height);
+            return `M ${x} ${y} H ${x + width} V ${y + height} H ${x} Z`;
+        }
+        if (tag === 'circle') {
+            return ellipsePath(
+                number(attrs.cx),
+                number(attrs.cy),
+                number(attrs.r),
+                number(attrs.r)
+            );
+        }
+        if (tag === 'ellipse') {
+            return ellipsePath(
+                number(attrs.cx),
+                number(attrs.cy),
+                number(attrs.rx),
+                number(attrs.ry)
+            );
+        }
+        return '';
+    }
+
+    function ellipsePath(cx, cy, rx, ry) {
+        const kappa = 0.5522847498307936;
+        const xControl = rx * kappa;
+        const yControl = ry * kappa;
+        return `M ${cx + rx} ${cy} ` +
+            `C ${cx + rx} ${cy + yControl} ${cx + xControl} ${cy + ry} ${cx} ${cy + ry} ` +
+            `C ${cx - xControl} ${cy + ry} ${cx - rx} ${cy + yControl} ${cx - rx} ${cy} ` +
+            `C ${cx - rx} ${cy - yControl} ${cx - xControl} ${cy - ry} ${cx} ${cy - ry} ` +
+            `C ${cx + xControl} ${cy - ry} ${cx + rx} ${cy - yControl} ${cx + rx} ${cy} Z`;
+    }
+
+    function toPathData(name) {
+        const definition = get(name);
+        return Object.freeze(
+            definition.nodes
+                .map(([tag, attrs]) => nodeToPath(tag, attrs))
+                .filter(Boolean)
+        );
+    }
+
+    function draw(context, name, options = {}) {
+        if (!context || typeof context.svgPath !== 'function') return false;
+
+        const size = Number(options.size);
+        const x = Number(options.x);
+        const y = Number(options.y);
+        if (![size, x, y].every(Number.isFinite) || size <= 0) return false;
+
+        const iconTokens = engine.design?.TOKENS?.icons || {};
+        const strokeTokens = iconTokens.strokeWidth || {};
+        const baselineCorrection = Number(
+            options.baselineCorrection ?? iconTokens.baselineCorrection ?? 1.08
+        );
+        const strokeWidth = Number(
+            options.strokeWidth ?? Math.max(
+                Number(strokeTokens.min ?? 0.48),
+                Math.min(
+                    Number(strokeTokens.max ?? 0.72),
+                    size * Number(strokeTokens.ratio ?? 0.055)
+                )
+            )
+        );
+        const color = options.color || 'purplePrimary';
+        const drawY = y - size * baselineCorrection;
+
+        for (const path of toPathData(name)) {
+            context.svgPath(path, {
+                x,
+                y: drawY,
+                size,
+                stroke: color,
+                borderWidth: strokeWidth
+            });
+        }
+        return true;
+    }
+
+    function list() {
+        return Object.freeze(Object.keys(registry));
+    }
+
     function warn(message, value) {
         if (typeof engine.diagnostics === 'function') {
             engine.diagnostics({
@@ -560,8 +664,14 @@
     }
 
     engine.icons = Object.freeze({
+        version: ICON_SYSTEM_VERSION,
+        fallback: FALLBACK_ICON_NAME,
         get,
-        has
+        has,
+        resolveName,
+        toPathData,
+        draw,
+        list
     });
 
     global.ExecutiveSlideEngine = engine;

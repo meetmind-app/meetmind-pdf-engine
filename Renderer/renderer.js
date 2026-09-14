@@ -1,6 +1,6 @@
 /**
  * MeetMind Executive PDF Engine
- * Renderer Orchestrator — Golden Release 1.0
+ * Renderer Orchestrator — Golden Release 1.2
  *
  * Responsibilities only:
  * - validate LayoutResult;
@@ -20,7 +20,7 @@
     'use strict';
 
     const NAME = 'MeetMindRenderer';
-    const VERSION = '1.1.0-pdf-hardening-v2';
+    const VERSION = '1.2.0-design-icon-system-v2';
 
     class RendererError extends Error {
         constructor(code, message, details) {
@@ -147,42 +147,13 @@
         return typeof raw === 'string' ? raw.split(/\n\s*\n|\n/).map(cleanText).filter(Boolean) : [];
     }
 
-    function registryIconPath(tag, attrs) {
-        const n = value => Number(value || 0);
-        if (tag === 'path') return String(attrs.d || '');
-        if (tag === 'line') return `M ${n(attrs.x1)} ${n(attrs.y1)} L ${n(attrs.x2)} ${n(attrs.y2)}`;
-        if (tag === 'polyline') {
-            const points = String(attrs.points || '').trim().split(/\s+/)
-                .map(value => value.split(',').map(Number))
-                .filter(point => point.length === 2 && point.every(Number.isFinite));
-            if (!points.length) return '';
-            return `M ${points[0][0]} ${points[0][1]} ` + points.slice(1).map(point => `L ${point[0]} ${point[1]}`).join(' ');
-        }
-        if (tag === 'rect') {
-            const x = n(attrs.x), y = n(attrs.y), w = n(attrs.width), h = n(attrs.height);
-            return `M ${x} ${y} H ${x + w} V ${y + h} H ${x} Z`;
-        }
-        if (tag === 'circle') {
-            const cx = n(attrs.cx), cy = n(attrs.cy), r = n(attrs.r);
-            const k = 0.5522847498307936, c = r * k;
-            return `M ${cx + r} ${cy} C ${cx + r} ${cy + c} ${cx + c} ${cy + r} ${cx} ${cy + r} ` +
-                `C ${cx - c} ${cy + r} ${cx - r} ${cy + c} ${cx - r} ${cy} ` +
-                `C ${cx - r} ${cy - c} ${cx - c} ${cy - r} ${cx} ${cy - r} ` +
-                `C ${cx + c} ${cy - r} ${cx + r} ${cy - c} ${cx + r} ${cy} Z`;
-        }
-        return '';
-    }
-
     function drawRegistryIcon(ctx, name, x, y, size, color = 'purplePrimary') {
-        const def = globalScope.ExecutiveSlideEngine?.icons?.get?.(name);
-        if (!def || typeof ctx.svgPath !== 'function') return false;
-        const drawY = y - size * 1.08;
-        const stroke = Math.max(.48, Math.min(.72, size * .055));
-        def.nodes.forEach(([tag, attrs]) => {
-            const path = registryIconPath(tag, attrs || {});
-            if (path) ctx.svgPath(path, { x, y: drawY, size, stroke: color, borderWidth: stroke });
-        });
-        return true;
+        return globalScope.ExecutiveSlideEngine?.icons?.draw?.(ctx, name, {
+            x,
+            y,
+            size,
+            color
+        }) || false;
     }
 
     function renderSummaryIntegrity(block, ctx) {

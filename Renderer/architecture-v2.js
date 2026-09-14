@@ -28,14 +28,6 @@
     });
 
     const ACCENTS = Object.freeze(['purplePrimary', 'greenSuccess', 'orangeRisk', 'purplePrimary']);
-    const TYPE_ICONS = Object.freeze({
-        process: 'settings',
-        workflow: 'settings',
-        system: 'box',
-        integration: 'network',
-        data: 'database',
-        other: 'file-text'
-    });
     const ITEM_ICON_SIZE = 6.4;
     const ITEM_ICON_GAP = 3.2;
     const DESIGN_MIN_SCALE = 0.78;
@@ -137,42 +129,8 @@
         return lines.length * textStyle.lineHeight;
     }
 
-    function nodePath(tag, attrs) {
-        const n = value => Number(value || 0);
-        if (tag === 'path') return String(attrs.d || '');
-        if (tag === 'line') return `M ${n(attrs.x1)} ${n(attrs.y1)} L ${n(attrs.x2)} ${n(attrs.y2)}`;
-        if (tag === 'polyline') {
-            const points = String(attrs.points || '').trim().split(/\s+/)
-                .map(value => value.split(',').map(Number))
-                .filter(point => point.length === 2 && point.every(Number.isFinite));
-            if (!points.length) return '';
-            return `M ${points[0][0]} ${points[0][1]} ` + points.slice(1).map(point => `L ${point[0]} ${point[1]}`).join(' ');
-        }
-        if (tag === 'rect') {
-            const x = n(attrs.x), y = n(attrs.y), w = n(attrs.width), h = n(attrs.height);
-            return `M ${x} ${y} H ${x + w} V ${y + h} H ${x} Z`;
-        }
-        if (tag === 'circle') {
-            const cx = n(attrs.cx), cy = n(attrs.cy), r = n(attrs.r);
-            const k = 0.5522847498307936, c = r * k;
-            return `M ${cx + r} ${cy} C ${cx + r} ${cy + c} ${cx + c} ${cy + r} ${cx} ${cy + r} ` +
-                `C ${cx - c} ${cy + r} ${cx - r} ${cy + c} ${cx - r} ${cy} ` +
-                `C ${cx - r} ${cy - c} ${cx - c} ${cy - r} ${cx} ${cy - r} ` +
-                `C ${cx + c} ${cy - r} ${cx + r} ${cy - c} ${cx + r} ${cy} Z`;
-        }
-        return '';
-    }
-
     function drawIcon(ctx, name, x, y, size, color) {
-        const registry = host.icons;
-        const def = registry?.get?.(name);
-        if (!def || typeof ctx.svgPath !== 'function') return;
-        const drawY = y - size * 1.08;
-        const stroke = Math.max(.46, Math.min(.7, size * .055));
-        def.nodes.forEach(([tag, attrs]) => {
-            const path = nodePath(tag, attrs || {});
-            if (path) ctx.svgPath(path, { x, y: drawY, size, stroke: color, borderWidth: stroke });
-        });
+        host.icons?.draw?.(ctx, name, { x, y, size, color });
     }
 
     function drawHorizontalConnector(ctx, x, y, width, color) {
@@ -413,7 +371,15 @@
         });
 
         const heading = style(ctx, 'blockTitle', { font: 'bold', size: 8.2, lineHeight: 9.8, color: 'textPrimary' });
-        drawIcon(ctx, 'settings', g.x + sp.padX, g.y + sp.padY + 1.2, 9.2, 'purplePrimary');
+        const semanticIcons = host.semanticIcons;
+        drawIcon(
+            ctx,
+            semanticIcons?.section?.('architecture') || 'network',
+            g.x + sp.padX,
+            g.y + sp.padY + 1.2,
+            9.2,
+            'purplePrimary'
+        );
         ctx.text(TITLES[language(ctx)], {
             x: g.x + sp.padX + 13.2,
             y: g.y + sp.padY,
@@ -514,7 +480,7 @@
                         const visualItemIndex = itemIndex;
                         const stepX = sectionInnerX + visualItemIndex * (stepW + arrowSpace);
                         const geometry = itemGeometry(stepX, stepW, scale, 4);
-                        const iconName = TYPE_ICONS[item.data.type] || TYPE_ICONS.process;
+                        const iconName = semanticIcons?.architectureItem?.(item.data) || 'file-text';
                         ctx.rect({
                             x: stepX,
                             y,
@@ -559,7 +525,7 @@
                 } else if (sectionModel.mode === 'process') {
                     sectionModel.body.items.forEach((item, itemIndex) => {
                         const geometry = itemGeometry(sectionInnerX, sectionModel.sectionInnerW, scale);
-                        const iconName = TYPE_ICONS[item.data.type] || TYPE_ICONS.process;
+                        const iconName = semanticIcons?.architectureItem?.(item.data) || 'file-text';
                         drawIcon(ctx, iconName, geometry.iconX, y + 4, geometry.iconSize, accent);
                         let itemY = y;
                         itemY += drawLines(
@@ -603,7 +569,7 @@
                             const visualCol = item.col;
                             const cellX = sectionInnerX + visualCol * (componentGrid.cellW + componentGrid.gap);
                             const geometry = itemGeometry(cellX, componentGrid.cellW, scale);
-                            const iconName = TYPE_ICONS[item.data.type] || TYPE_ICONS.other;
+                            const iconName = semanticIcons?.architectureItem?.(item.data) || 'file-text';
                             drawIcon(ctx, iconName, geometry.iconX, componentY + 4, geometry.iconSize, accent);
                             let itemY = componentY;
                             itemY += drawLines(
@@ -640,7 +606,7 @@
     host.blockRenderers = Object.freeze({
         ...previous,
         architecture: renderArchitectureV2,
-        version: `${previous.version || 'block-renderers'}+architecture-v2`
+        version: `${previous.version || 'block-renderers'}+architecture-v2.1`
     });
 
 })(window);

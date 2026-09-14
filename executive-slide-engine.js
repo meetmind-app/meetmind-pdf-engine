@@ -14,9 +14,9 @@
     'use strict';
 
     const ENGINE_NAME = 'ExecutiveSlideEngine';
-    const ENGINE_VERSION = '1.5.0-pdf-hardening-v2';
+    const ENGINE_VERSION = '1.6.0-design-icon-system-v2';
     const ENGINE_BASE = 'https://meetmind-app.github.io/meetmind-pdf-engine/';
-    const CACHE_VERSION = 'golden-1.5.0-pdf-hardening-v2';
+    const CACHE_VERSION = 'golden-1.6.0-design-icon-system-v2';
 
     const PDF_LIB_CDN =
         'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js';
@@ -439,10 +439,11 @@
             if (
                 !global[ENGINE_NAME]?.icons ||
                 typeof global[ENGINE_NAME].icons.get !== 'function' ||
-                typeof global[ENGINE_NAME].icons.has !== 'function'
+                typeof global[ENGINE_NAME].icons.has !== 'function' ||
+                typeof global[ENGINE_NAME].icons.draw !== 'function'
             ) {
                 throw new Error(
-                    'Icon Registry did not expose ExecutiveSlideEngine.icons.get()/has().'
+                    'Icon Registry did not expose ExecutiveSlideEngine.icons.get()/has()/draw().'
                 );
             }
 
@@ -506,15 +507,25 @@
                 );
             }
 
-            if (!host?.icons || typeof host.icons.get !== 'function') {
+            if (
+                !host?.icons ||
+                typeof host.icons.get !== 'function' ||
+                typeof host.icons.draw !== 'function'
+            ) {
                 throw new Error(
                     'Golden Icon Registry was not attached to ExecutiveSlideEngine.icons.'
                 );
             }
 
-            if (!host?.semanticIcons || typeof host.semanticIcons.resolveMetric !== 'function') {
+            if (
+                !host?.semanticIcons ||
+                typeof host.semanticIcons.resolveMetric !== 'function' ||
+                typeof host.semanticIcons.section !== 'function' ||
+                typeof host.semanticIcons.stat !== 'function' ||
+                typeof host.semanticIcons.architectureItem !== 'function'
+            ) {
                 throw new Error(
-                    'Semantic Icons v2 did not expose ExecutiveSlideEngine.semanticIcons.resolveMetric().'
+                    'Semantic Icons v2 did not expose its complete resolver contract.'
                 );
             }
 

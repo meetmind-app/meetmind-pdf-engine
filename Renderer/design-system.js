@@ -1,11 +1,12 @@
 /*
  * MeetMind AI — Executive PDF Engine
- * Golden Design System v1.0
+ * Golden Design System v2.0
  *
  * Canonical visual tokens for the approved Enterprise Architecture Cards
  * Golden Template. Behaviour remains owned by the Frozen MVP Specification.
  *
  * Public contract:
+ *   ExecutiveSlideEngine.design.version
  *   ExecutiveSlideEngine.design.TOKENS
  *   ExecutiveSlideEngine.design.getDensityTokens(density)
  *   ExecutiveSlideEngine.design.getTextStyle(role, density)
@@ -17,6 +18,7 @@
     'use strict';
 
     const engine = global.ExecutiveSlideEngine || {};
+    const DESIGN_VERSION = '2.0.0';
 
     const TOKENS = deepFreeze({
         page: {
@@ -157,6 +159,9 @@
         },
 
         icons: {
+            viewBoxSize: 24,
+            baselineCorrection: 1.08,
+            strokeWidth: { ratio: 0.055, min: 0.48, max: 0.72 },
             standard: { regular: 10, compact: 9.5, dense: 9, min: 8.5 },
             section: { regular: 11, compact: 10.5, dense: 10, min: 9 },
             metricPrimary: 13,
@@ -320,7 +325,14 @@
         return Object.freeze(value);
     }
 
-    engine.design = Object.freeze({ TOKENS, getDensityTokens, getTextStyle, getTypographyToken, getColor });
+    engine.design = Object.freeze({
+        version: DESIGN_VERSION,
+        TOKENS,
+        getDensityTokens,
+        getTextStyle,
+        getTypographyToken,
+        getColor
+    });
     global.ExecutiveSlideEngine = engine;
 
 })(typeof globalThis !== 'undefined' ? globalThis : window);
