@@ -63,3 +63,6 @@ jobs:
 
       - name: Run shared E2E contract corpus
         run: node Tests/e2e-contract-corpus.test.js
+
+      - name: Run Persian/Arabic OpenType shaping contract
+        run: node Tests/rtl-pdf-fa-ar.test.js

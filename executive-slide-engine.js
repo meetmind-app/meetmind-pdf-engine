@@ -14,9 +14,9 @@
     'use strict';
 
     const ENGINE_NAME = 'ExecutiveSlideEngine';
-    const ENGINE_VERSION = '1.4.6-semantic-icons-v2';
+    const ENGINE_VERSION = '1.4.7-rtl-opentype';
     const ENGINE_BASE = 'https://meetmind-app.github.io/meetmind-pdf-engine/';
-    const CACHE_VERSION = 'golden-1.4.6-semantic-icons-v2';
+    const CACHE_VERSION = 'golden-1.4.7-rtl-opentype';
 
     const PDF_LIB_CDN =
         'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js';
@@ -515,7 +515,10 @@
     async function createSurface(dependencies, language) {
         const surface = await dependencies.DrawingSurface.create({
             PDFDocument: dependencies.pdfLib.PDFDocument,
-            fontkit: dependencies.fontkit
+            fontkit: dependencies.fontkit,
+            pdfLib: dependencies.pdfLib,
+            language,
+            rgb: dependencies.pdfLib.rgb
         });
 
         const fontEntries = Object.entries(resolveFontPaths({ language }));
@@ -550,7 +553,7 @@
     }
 
 
-    function addMeetMindFooterLinks(surface, layoutResult, pdfLib) {
+    function addMeetMindFooterLinks(surface, layoutResult, pdfLib, language) {
         const PDFName = pdfLib.PDFName;
         const PDFString = pdfLib.PDFString;
         const PDFArray = pdfLib.PDFArray;
@@ -559,6 +562,7 @@
 
         const target = 'https://t.me/meetmind_app_bot';
         const pages = surface.pages || [];
+        const isRtl = ['ar', 'fa'].includes(normalizeLanguage(language));
 
         layoutResult.pages.forEach((layoutPage, index) => {
             const pdfPage = pages[index];
@@ -567,11 +571,14 @@
             const g = footer?.geometry;
             if (!g) return;
 
-            // Clickable zone covers the visible meetmind.ai brand at the far right.
-            // Layout coordinates are top-down; PDF annotation rectangles are bottom-up.
+            // Clickable zone follows the visible LOREVI footer brand. Layout
+            // coordinates are top-down; PDF annotation rectangles are bottom-up.
+            const pageWidth = layoutResult.size?.width || 768;
             const pageHeight = layoutResult.size?.height || 512;
-            const x1 = g.x + g.width - 52;
-            const x2 = g.x + g.width;
+            const x1 = isRtl
+                ? pageWidth - (g.x + g.width)
+                : g.x + g.width - 52;
+            const x2 = x1 + 52;
             const y1 = pageHeight - (g.y + g.height);
             const y2 = pageHeight - g.y;
             const context = surface.pdf.context;
@@ -667,7 +674,7 @@
             }
         );
 
-        addMeetMindFooterLinks(surface, layoutResult, dependencies.pdfLib);
+        addMeetMindFooterLinks(surface, layoutResult, dependencies.pdfLib, language);
 
         const pdfBytes = await surface.save();
 

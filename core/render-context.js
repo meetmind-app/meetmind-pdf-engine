@@ -1,101 +1,11 @@
-import bidiFactory from 'https://cdn.jsdelivr.net/npm/bidi-js@1.1.0/+esm';
-
 /**
  * LOREVI Executive PDF Engine
- * RenderContext — RTL-safe PDF text pipeline.
+ * RenderContext — Golden Release 1.1 RTL adapter.
  *
- * pdf-lib draws glyphs in the order it receives them. For Arabic/Persian we
- * therefore do two explicit passes before drawText():
- *   1) contextual Arabic/Persian shaping;
- *   2) Unicode Bidirectional Algorithm (UAX #9) via bidi-js.
- *
- * bidi-js is pinned to 1.1.0. LTR languages never enter this pipeline.
+ * This adapter mirrors page geometry for Arabic/Persian reports and keeps text
+ * in logical Unicode order. DrawingSurface owns bidi resolution and OpenType
+ * glyph shaping so measurement and visible rendering use the same pipeline.
  */
-
-const bidi = bidiFactory();
-
-const ARABIC_FORMS = Object.freeze({
-  '\u0621':['\uFE80','\uFE80',null,null], '\u0622':['\uFE81','\uFE82',null,null],
-  '\u0623':['\uFE83','\uFE84',null,null], '\u0624':['\uFE85','\uFE86',null,null],
-  '\u0625':['\uFE87','\uFE88',null,null], '\u0626':['\uFE89','\uFE8A','\uFE8B','\uFE8C'],
-  '\u0627':['\uFE8D','\uFE8E',null,null], '\u0628':['\uFE8F','\uFE90','\uFE91','\uFE92'],
-  '\u0629':['\uFE93','\uFE94',null,null], '\u062A':['\uFE95','\uFE96','\uFE97','\uFE98'],
-  '\u062B':['\uFE99','\uFE9A','\uFE9B','\uFE9C'], '\u062C':['\uFE9D','\uFE9E','\uFE9F','\uFEA0'],
-  '\u062D':['\uFEA1','\uFEA2','\uFEA3','\uFEA4'], '\u062E':['\uFEA5','\uFEA6','\uFEA7','\uFEA8'],
-  '\u062F':['\uFEA9','\uFEAA',null,null], '\u0630':['\uFEAB','\uFEAC',null,null],
-  '\u0631':['\uFEAD','\uFEAE',null,null], '\u0632':['\uFEAF','\uFEB0',null,null],
-  '\u0633':['\uFEB1','\uFEB2','\uFEB3','\uFEB4'], '\u0634':['\uFEB5','\uFEB6','\uFEB7','\uFEB8'],
-  '\u0635':['\uFEB9','\uFEBA','\uFEBB','\uFEBC'], '\u0636':['\uFEBD','\uFEBE','\uFEBF','\uFEC0'],
-  '\u0637':['\uFEC1','\uFEC2','\uFEC3','\uFEC4'], '\u0638':['\uFEC5','\uFEC6','\uFEC7','\uFEC8'],
-  '\u0639':['\uFEC9','\uFECA','\uFECB','\uFECC'], '\u063A':['\uFECD','\uFECE','\uFECF','\uFED0'],
-  '\u0641':['\uFED1','\uFED2','\uFED3','\uFED4'], '\u0642':['\uFED5','\uFED6','\uFED7','\uFED8'],
-  '\u0643':['\uFED9','\uFEDA','\uFEDB','\uFEDC'], '\u0644':['\uFEDD','\uFEDE','\uFEDF','\uFEE0'],
-  '\u0645':['\uFEE1','\uFEE2','\uFEE3','\uFEE4'], '\u0646':['\uFEE5','\uFEE6','\uFEE7','\uFEE8'],
-  '\u0647':['\uFEE9','\uFEEA','\uFEEB','\uFEEC'], '\u0648':['\uFEED','\uFEEE',null,null],
-  '\u0649':['\uFEEF','\uFEF0',null,null], '\u064A':['\uFEF1','\uFEF2','\uFEF3','\uFEF4'],
-  '\u067E':['\uFB56','\uFB57','\uFB58','\uFB59'], '\u0686':['\uFB7A','\uFB7B','\uFB7C','\uFB7D'],
-  '\u0698':['\uFB8A','\uFB8B',null,null], '\u06A9':['\uFB8E','\uFB8F','\uFB90','\uFB91'],
-  '\u06AF':['\uFB92','\uFB93','\uFB94','\uFB95'], '\u06CC':['\uFBFC','\uFBFD','\uFBFE','\uFBFF']
-});
-
-const RTL_MARK_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/;
-const COMBINING_RE = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/;
-const BREAK_JOIN_RE = /[\u200C\u200D]/;
-
-function previousBase(chars, index) {
-  for (let i = index - 1; i >= 0; i -= 1) {
-    if (COMBINING_RE.test(chars[i])) continue;
-    if (BREAK_JOIN_RE.test(chars[i]) || /\s/.test(chars[i])) return null;
-    return chars[i];
-  }
-  return null;
-}
-
-function nextBase(chars, index) {
-  for (let i = index + 1; i < chars.length; i += 1) {
-    if (COMBINING_RE.test(chars[i])) continue;
-    if (BREAK_JOIN_RE.test(chars[i]) || /\s/.test(chars[i])) return null;
-    return chars[i];
-  }
-  return null;
-}
-
-function canJoinFromLeft(char) {
-  const forms = ARABIC_FORMS[char];
-  return Boolean(forms && forms[1]);
-}
-
-function canJoinToRight(char) {
-  const forms = ARABIC_FORMS[char];
-  return Boolean(forms && forms[2]);
-}
-
-function shapeArabic(text) {
-  const chars = Array.from(String(text ?? ''));
-  return chars.map((char, index) => {
-    const forms = ARABIC_FORMS[char];
-    if (!forms) return char === '\u200C' || char === '\u200D' ? '' : char;
-    const prev = previousBase(chars, index);
-    const next = nextBase(chars, index);
-    const joinsPrev = Boolean(prev && canJoinToRight(prev) && canJoinFromLeft(char));
-    const joinsNext = Boolean(next && canJoinToRight(char) && canJoinFromLeft(next));
-    if (joinsPrev && joinsNext && forms[3]) return forms[3];
-    if (joinsPrev && forms[1]) return forms[1];
-    if (joinsNext && forms[2]) return forms[2];
-    return forms[0] || char;
-  }).join('');
-}
-
-function visualRtlText(value) {
-  const logical = String(value ?? '');
-  if (!RTL_MARK_RE.test(logical)) return logical;
-
-  // Shape first in logical order, then let the Unicode BiDi algorithm resolve
-  // mixed Persian/Arabic + Latin/API + numbers + punctuation correctly.
-  const shaped = shapeArabic(logical);
-  const levels = bidi.getEmbeddingLevels(shaped, 'rtl');
-  return bidi.getReorderedString(shaped, levels);
-}
 
 export class RenderContext {
   constructor(drawingSurface, tokens = null, options = {}) {
@@ -136,6 +46,10 @@ export class RenderContext {
       return root.rgb(r, g, b);
     }
 
+    function fontName(value) {
+      return typeof value === 'string' && value ? value : 'regular';
+    }
+
     function font(value) {
       if (!value) return root.surface.getFont('regular');
       if (typeof value !== 'string') return value;
@@ -160,10 +74,13 @@ export class RenderContext {
         const sizePt = Number(options.size || 8);
         const topY = Number(options.y || 0);
         const logicalValue = String(value ?? '');
-        const renderedValue = isRtl ? visualRtlText(logicalValue) : logicalValue;
+        const renderedFontName = fontName(options.font);
         const renderedFont = font(options.font);
-        const textWidth = isRtl ? renderedFont.widthOfTextAtSize(renderedValue, sizePt) : 0;
-        return root.surface.drawText(renderedValue, {
+        const textWidth = isRtl
+          ? root.surface.measureText(logicalValue, renderedFontName, sizePt)
+          : 0;
+
+        return root.surface.drawText(logicalValue, {
           x: mirrorX(options.x, textWidth),
           y: height - topY - sizePt,
           size: sizePt,
@@ -236,9 +153,8 @@ export class RenderContext {
         });
       },
 
-      measureText(text, fontName, sizePt) {
-        const value = isRtl ? visualRtlText(text) : text;
-        return root.surface.measureText(value, fontName, sizePt);
+      measureText(text, name, sizePt) {
+        return root.surface.measureText(text, fontName(name), sizePt);
       },
       getFont(name) { return root.surface.getFont(name); }
     };
@@ -247,5 +163,3 @@ export class RenderContext {
   finalize() {}
   save() { return this.surface.save(); }
 }
-
-export { shapeArabic, visualRtlText };
