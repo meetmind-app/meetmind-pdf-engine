@@ -12,10 +12,12 @@ fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(outDir, { recursive: true });
 
 const cases = [
-  ['RU_REAL_001', path.join(__dirname, 'fixtures', 'RU_REAL_001.json')],
+  ['FA_RTL_001', path.join(__dirname, 'fixtures', 'FA_RTL_001.json')],
   ['RU_DENSE_002', path.join(__dirname, 'fixtures', 'RU_DENSE_002.json')],
   ['EN_ASYMMETRIC_001', path.join(__dirname, 'fixtures', 'EN_ASYMMETRIC_001.json')],
-  ['RU_CONTRACT_V11_001', path.join(__dirname, 'fixtures', 'RU_CONTRACT_V11_001.json')]
+  ['AR_RTL_001', path.join(__dirname, 'fixtures', 'AR_RTL_001.json')],
+  ['RU_REAL_001', path.join(__dirname, 'fixtures', 'RU_REAL_001.json')],
+  ['RU_CONTRACT_V11_001', path.join(__dirname, 'fixtures', 'RU_CONTRACT_V11_001.json')],
 ];
 
 function normalizeCurrentWebPayload(report) {
@@ -48,14 +50,19 @@ const page = await browser.newPage({ viewport: { width: 1536, height: 1024 } });
 
 const pdfLibPath = path.join(repoRoot, 'node_modules', 'pdf-lib', 'dist', 'pdf-lib.min.js');
 const fontkitPath = path.join(repoRoot, 'node_modules', '@pdf-lib', 'fontkit', 'dist', 'fontkit.umd.min.js');
+const bidiPath = path.join(repoRoot, 'node_modules', 'bidi-js', 'dist', 'bidi.min.mjs');
 if (!fs.existsSync(pdfLibPath)) throw new Error(`Missing ${pdfLibPath}`);
 if (!fs.existsSync(fontkitPath)) throw new Error(`Missing ${fontkitPath}`);
+if (!fs.existsSync(bidiPath)) throw new Error(`Missing ${bidiPath}`);
 
 await page.route('https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js', route =>
   route.fulfill({ path: pdfLibPath })
 );
 await page.route('https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js', route =>
   route.fulfill({ path: fontkitPath })
+);
+await page.route('https://cdn.jsdelivr.net/npm/bidi-js@1.1.0/+esm', route =>
+  route.fulfill({ path: bidiPath, contentType: 'text/javascript' })
 );
 await page.route('https://meetmind-app.github.io/meetmind-pdf-engine/**', route => {
   const localPath = safeLocalPath(route.request().url());
@@ -76,6 +83,23 @@ await page.goto('https://meetmind-app.github.io/meetmind-pdf-engine/Tests/visual
   waitUntil: 'domcontentloaded'
 });
 await page.waitForFunction(() => typeof window.ExecutiveSlideEngine?.generate === 'function');
+
+const bidiContract = await page.evaluate(async () => {
+  const { resolveVisualRuns } = await import(
+    'https://meetmind-app.github.io/meetmind-pdf-engine/core/rtl-bidi.js'
+  );
+  return {
+    mixed: resolveVisualRuns('ناسازگاری با Google Calendar مطرح شد.'),
+    brackets: resolveVisualRuns('(نسخه API 2)')
+  };
+});
+
+if (bidiContract.mixed[1]?.text !== 'Google Calendar') {
+  throw new Error('RTL bidi contract failed: embedded Latin phrase lost LTR order.');
+}
+if (bidiContract.brackets[0]?.text !== '(' || !bidiContract.brackets.at(-1)?.text.startsWith(')')) {
+  throw new Error('RTL bidi contract failed: paired punctuation was not mirrored.');
+}
 
 const manifest = [];
 
