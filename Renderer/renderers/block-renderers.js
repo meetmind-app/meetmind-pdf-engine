@@ -453,8 +453,8 @@
         // This is geometry-driven: no task count, benchmark, language or text is hardcoded.
         const preparedTasks=tasks.map(t=>{
             const task=clean(t?.task||t?.title||t?.description||t?.text);
-            const owner=clean(t?.owner?.name||t?.owner||'');
-            const due=clean(t?.due_date||t?.dueDate||t?.deadline||'');
+            const owner=clean(t?.owner?.name||t?.owner||'')||'—';
+            const due=clean(t?.due_date||t?.dueDate||t?.deadline||'')||'—';
             const taskLines=wrap(ctx,task,taskW-5,cs);
             const ownerLines=wrap(ctx,owner,ownerW-5,cs);
             const dueLines=wrap(ctx,due,dueW-9,cs);

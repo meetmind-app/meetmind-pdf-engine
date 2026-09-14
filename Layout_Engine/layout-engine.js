@@ -130,37 +130,51 @@
     }
 
     let ACTIVE_MEASURE_TEXT = null;
+    let ACTIVE_TOKENS = null;
+    let ACTIVE_TEXT_WIDTH_CACHE = new Map();
+    let ACTIVE_LINE_COUNT_CACHE = new Map();
+    let ACTIVE_BLOCK_MEASURE_CACHE = new WeakMap();
+
+    function measuredTextWidth(text, fontName, fontSize) {
+        const key = `${fontName}\u0000${Number(fontSize).toFixed(3)}\u0000${text}`;
+        if (ACTIVE_TEXT_WIDTH_CACHE.has(key)) return ACTIVE_TEXT_WIDTH_CACHE.get(key);
+        const width = ACTIVE_MEASURE_TEXT(text, fontName, fontSize);
+        ACTIVE_TEXT_WIDTH_CACHE.set(key, width);
+        return width;
+    }
 
     function lineCount(text, width, fontSize, fontName = 'regular') {
         const s = cleanText(text);
         if (!s) return 0;
+        const cacheKey = `${fontName}\u0000${Number(fontSize).toFixed(3)}\u0000${Number(width).toFixed(3)}\u0000${s}`;
+        if (ACTIVE_LINE_COUNT_CACHE.has(cacheKey)) return ACTIVE_LINE_COUNT_CACHE.get(cacheKey);
         if (typeof ACTIVE_MEASURE_TEXT === 'function') {
             const words = s.split(/\s+/);
-            let lines = 1;
+            const wrapped = [];
             let line = '';
             for (const word of words) {
                 const candidate = line ? `${line} ${word}` : word;
-                if (!line || ACTIVE_MEASURE_TEXT(candidate, fontName, fontSize) <= width) {
+                if (measuredTextWidth(candidate, fontName, fontSize) <= width) {
                     line = candidate;
                     continue;
                 }
-                lines += 1;
-                line = word;
-                // Match Renderer behavior for a single over-wide token.
-                if (ACTIVE_MEASURE_TEXT(line, fontName, fontSize) > width) {
-                    let fragment = '';
-                    let extra = 0;
-                    for (const ch of line) {
-                        const next = fragment + ch;
-                        if (fragment && ACTIVE_MEASURE_TEXT(next, fontName, fontSize) > width) {
-                            extra += 1;
-                            fragment = ch;
-                        } else fragment = next;
+                if (line) wrapped.push(line);
+                line = '';
+                let fragment = '';
+                for (const ch of word) {
+                    const next = fragment + ch;
+                    if (fragment && measuredTextWidth(next, fontName, fontSize) > width) {
+                        wrapped.push(fragment);
+                        fragment = ch;
+                    } else {
+                        fragment = next;
                     }
-                    lines += extra;
-                    line = fragment;
                 }
+                line = fragment;
             }
+            if (line) wrapped.push(line);
+            const lines = wrapped.length;
+            ACTIVE_LINE_COUNT_CACHE.set(cacheKey, lines);
             return lines;
         }
 
@@ -177,6 +191,7 @@
                 used = word.length % cap;
             } else used += n;
         }
+        ACTIVE_LINE_COUNT_CACHE.set(cacheKey, lines);
         return lines;
     }
 
@@ -245,15 +260,18 @@
     function measureMetrics(block, width, mode) {
         const items = arrayOf(block);
         if (!items.length) return 0;
-        const columns = width >= 300 ? 4 : width >= 200 ? 3 : 2;
+        const columns = items.length === 5
+            ? 3
+            : Math.min(4, Math.max(1, items.length));
         const rows = Math.ceil(items.length / columns);
-        const cellW = (width - (columns - 1) * mode.cardGap) / columns;
         const contextSize = Math.max(5.0, mode.small * 0.88);
         const contextLine = Math.max(6.0, mode.smallLine * 0.88);
         let total = 0;
         for (let r = 0; r < rows; r++) {
+            const rowCount = Math.min(columns, items.length - r * columns);
+            const cellW = (width - (rowCount - 1) * mode.cardGap) / rowCount;
             let rowH = 0;
-            for (let c = 0; c < columns; c++) {
+            for (let c = 0; c < rowCount; c++) {
                 const item = items[r * columns + c];
                 if (!item) continue;
                 const label = cleanText(item.label || item.title || item.name);
@@ -284,8 +302,8 @@
         let h = blockChrome(mode) + 14;
         for (const item of items) {
             const task = cleanText(item.task || item.title || item.description || item.text);
-            const owner = cleanText(item.owner?.name || item.owner || '');
-            const due = cleanText(item.dueDate || item.due_date || item.deadline || '');
+            const owner = cleanText(item.owner?.name || item.owner || '') || '—';
+            const due = cleanText(item.dueDate || item.due_date || item.deadline || '') || '—';
             const lines = Math.max(
                 1,
                 lineCount(task, taskW, mode.taskBody),
@@ -297,26 +315,170 @@
         return Math.max(42, h);
     }
 
-    function measureArchitecture(block, width, mode) {
-        const sections = arrayOf(block);
-        if (!sections.length) return 0;
-        const cols = Math.min(4, Math.max(1, sections.length));
-        const colW = (width - (cols - 1) * mode.cardGap) / cols;
-        let max = 0;
-        for (const section of sections) {
-            const title = cleanText(section.title || section.name || section.label);
-            const items = Array.isArray(section.items) ? section.items : [];
-            let h = mode.padY * 2 + lineCount(title, colW - mode.padX * 2, mode.body) * mode.bodyLine + mode.lineGap;
-            for (const item of items) {
-                const it = cleanText(item.title || item.name || item.label);
-                const desc = cleanText(item.description || item.text || '');
-                h += Math.max(mode.bodyLine, lineCount(it, colW - mode.padX * 2, mode.small) * mode.smallLine);
-                if (desc) h += lineCount(desc, colW - mode.padX * 2, mode.small) * mode.smallLine;
-                h += mode.lineGap;
-            }
-            max = Math.max(max, h);
+    function densityName(mode) {
+        if (mode === MODES.dense) return 'dense';
+        if (mode === MODES.compact) return 'compact';
+        return 'regular';
+    }
+
+    function architectureStyle(name, mode, fallback) {
+        const token = ACTIVE_TOKENS?.typography?.tokens?.[name];
+        if (!token) return fallback;
+        const density = densityName(mode);
+        return {
+            size: Number(token.size?.[density] ?? token.size?.regular ?? fallback.size),
+            lineHeight: Number(token.lineHeight?.[density] ?? token.lineHeight?.regular ?? fallback.lineHeight),
+            font: token.font || fallback.font
+        };
+    }
+
+    function architectureRoot(block) {
+        const raw = block?.data ?? block?.content ?? block?.items ?? block?.value;
+        if (Array.isArray(raw)) return { sections: raw };
+        if (raw && typeof raw === 'object') {
+            return { ...raw, sections: Array.isArray(raw.sections) ? raw.sections : [] };
         }
-        return Math.max(42, blockChrome(mode) + max);
+        return { sections: [] };
+    }
+
+    function architectureMode(section, root) {
+        const raw = cleanText(
+            section?.layout || section?.mode || section?.kind ||
+            root?.layout || root?.mode || root?.kind
+        ).toLowerCase();
+        return ['process','flow','pipeline','sequence','workflow'].includes(raw)
+            ? 'process'
+            : 'components';
+    }
+
+    function architectureItemText(item) {
+        return {
+            title: cleanText(item?.title || item?.name || item?.label),
+            description: cleanText(item?.description || item?.text || '')
+        };
+    }
+
+    function measureArchitectureProcess(items, width, titleStyle, descStyle, horizontal) {
+        const iconSize = 6.4;
+        const iconGap = 3.2;
+        if (!items.length) return 0;
+        if (!horizontal) {
+            return items.reduce((sum, item, index) => {
+                const data = architectureItemText(item);
+                const textWidth = Math.max(4, width - iconSize - iconGap - 2);
+                const titleHeight = lineCount(data.title, textWidth, titleStyle.size, titleStyle.font)
+                    * titleStyle.lineHeight;
+                const descriptionHeight = data.description
+                    ? lineCount(data.description, textWidth, descStyle.size, descStyle.font) * descStyle.lineHeight
+                    : 0;
+                const itemHeight = Math.max(iconSize, titleHeight + descriptionHeight);
+                return sum + itemHeight + (index < items.length - 1 ? 9 : 0);
+            }, 0);
+        }
+
+        const arrowSpace = 12;
+        const stepWidth = Math.max(34, (width - arrowSpace * (items.length - 1)) / items.length);
+        const textWidth = Math.max(4, stepWidth - 4 - iconSize - iconGap - 2);
+        const maximum = items.reduce((max, item) => {
+            const data = architectureItemText(item);
+            const titleHeight = lineCount(data.title, textWidth, titleStyle.size, titleStyle.font)
+                * titleStyle.lineHeight;
+            const descriptionHeight = data.description
+                ? lineCount(data.description, textWidth, descStyle.size, descStyle.font) * descStyle.lineHeight + 1
+                : 0;
+            return Math.max(max, Math.max(iconSize, titleHeight) + descriptionHeight + 6);
+        }, 0);
+        return Math.max(28, maximum);
+    }
+
+    function measureArchitectureComponents(items, width, titleStyle, descStyle) {
+        if (!items.length) return 0;
+        const columns = width >= 210 && items.length > 1 ? 2 : 1;
+        const gap = 3;
+        const cellWidth = (width - gap * (columns - 1)) / columns;
+        const textWidth = Math.max(4, cellWidth - 6.4 - 3.2 - 2);
+        const rows = Math.ceil(items.length / columns);
+        let total = 0;
+        for (let row = 0; row < rows; row += 1) {
+            let rowHeight = 0;
+            for (let col = 0; col < columns; col += 1) {
+                const item = items[row * columns + col];
+                if (!item) continue;
+                const data = architectureItemText(item);
+                const titleHeight = lineCount(data.title, textWidth, titleStyle.size, titleStyle.font)
+                    * titleStyle.lineHeight;
+                const descriptionHeight = data.description
+                    ? lineCount(data.description, textWidth, descStyle.size, descStyle.font) * descStyle.lineHeight + 1
+                    : 0;
+                rowHeight = Math.max(rowHeight, Math.max(6.4, titleHeight) + descriptionHeight + 4);
+            }
+            total += rowHeight + (row < rows - 1 ? gap : 0);
+        }
+        return total;
+    }
+
+    function measureArchitecture(block, width, mode) {
+        const root = architectureRoot(block);
+        const sections = root.sections;
+        if (!sections.length) return 0;
+
+        // These values intentionally mirror Renderer/architecture-v2.js. The
+        // current renderer falls back to 6/5/3 for card padding/title gap and
+        // reads cardGap from the density token.
+        const rendererPadX = 6;
+        const rendererPadY = 5;
+        const rendererTitleGap = 3;
+        const tokenSpacing = ACTIVE_TOKENS?.spacing?.[densityName(mode)] || {};
+        const sectionGap = Number(tokenSpacing.cardGap ?? mode.cardGap ?? 3);
+        const heading = architectureStyle('blockTitle', mode, { font: 'bold', size: 8.2, lineHeight: 9.8 });
+        const sectionNo = architectureStyle('architectureSectionNo', mode, { font: 'bold', size: 6.5, lineHeight: 7.5 });
+        const sectionTitle = architectureStyle('architectureSectionTitle', mode, { font: 'bold', size: 6.3, lineHeight: 7.7 });
+        const itemTitle = architectureStyle('architectureItemTitle', mode, { font: 'semibold', size: 5.1, lineHeight: 6.2 });
+        const description = architectureStyle('architectureDescription', mode, { font: 'regular', size: 4.6, lineHeight: 5.6 });
+        const innerWidth = Math.max(30, width - rendererPadX * 2);
+        let rowsHeight = 0;
+        let rowCount = 0;
+
+        for (let start = 0; start < sections.length; start += 4) {
+            const row = sections.slice(start, start + 4);
+            const sectionWidth = (innerWidth - sectionGap * (row.length - 1)) / row.length;
+            let rowHeight = 24;
+            for (const section of row) {
+                const sectionInnerWidth = Math.max(4, sectionWidth - 12);
+                const titleWidth = Math.max(4, sectionInnerWidth - 18);
+                const headerHeight = Math.max(
+                    sectionNo.lineHeight,
+                    lineCount(
+                        section?.title || section?.name || section?.label,
+                        titleWidth,
+                        sectionTitle.size,
+                        sectionTitle.font
+                    ) * sectionTitle.lineHeight
+                );
+                const items = Array.isArray(section?.items) ? section.items : [];
+                const modeName = architectureMode(section, root);
+                const horizontal = modeName === 'process'
+                    && items.length > 1
+                    && items.length <= 4
+                    && sectionInnerWidth / items.length >= 62;
+                const bodyHeight = modeName === 'process'
+                    ? measureArchitectureProcess(items, sectionInnerWidth, itemTitle, description, horizontal)
+                    : measureArchitectureComponents(items, sectionInnerWidth, itemTitle, description);
+                rowHeight = Math.max(rowHeight, 6 + headerHeight + 5 + bodyHeight + 4);
+            }
+            rowsHeight += rowHeight;
+            rowCount += 1;
+        }
+
+        return Math.max(
+            42,
+            rendererPadY * 2
+                + heading.lineHeight
+                + rendererTitleGap
+                + rowsHeight
+                + Math.max(0, rowCount - 1) * sectionGap
+                + 0.75
+        );
     }
 
     function measureOwners(block, width, mode) {
@@ -328,21 +490,36 @@
     }
 
     function measure(block, width, mode) {
+        const cacheKey = `${densityName(mode)}:${Number(width).toFixed(3)}`;
+        if (block && typeof block === 'object') {
+            const cached = ACTIVE_BLOCK_MEASURE_CACHE.get(block);
+            if (cached?.has(cacheKey)) return cached.get(cacheKey);
+        }
         const id = idOf(block);
+        let result;
         switch (id) {
-            case 'header': return 39;
-            case 'meetingStats': return 17;
-            case 'executiveSummary': return measureSummary(block, width, mode);
-            case 'keyMetrics': return measureMetrics(block, width, mode);
+            case 'header': result = 39; break;
+            case 'meetingStats': result = 17; break;
+            case 'executiveSummary': result = measureSummary(block, width, mode); break;
+            case 'keyMetrics': result = measureMetrics(block, width, mode); break;
             case 'insights':
             case 'decisions':
-            case 'risks': return measureList(block, width, mode);
-            case 'tasks': return measureTasks(block, width, mode);
-            case 'architecture': return measureArchitecture(block, width, mode);
-            case 'owners': return measureOwners(block, width, mode);
-            case 'footer': return 28;
-            default: return measureList(block, width, mode);
+            case 'risks': result = measureList(block, width, mode); break;
+            case 'tasks': result = measureTasks(block, width, mode); break;
+            case 'architecture': result = measureArchitecture(block, width, mode); break;
+            case 'owners': result = measureOwners(block, width, mode); break;
+            case 'footer': result = 28; break;
+            default: result = measureList(block, width, mode); break;
         }
+        if (block && typeof block === 'object') {
+            let cached = ACTIVE_BLOCK_MEASURE_CACHE.get(block);
+            if (!cached) {
+                cached = new Map();
+                ACTIVE_BLOCK_MEASURE_CACHE.set(block, cached);
+            }
+            cached.set(cacheKey, result);
+        }
+        return result;
     }
 
     function getBlocks(composition) {
@@ -391,6 +568,8 @@
         if (!first || !second) return null;
 
         const gap = mode.columnGap;
+        const firstFullHeight = measure(first, contentW, mode);
+        const secondFullHeight = measure(second, contentW, mode);
         const candidates = [];
         const ratios = [];
         for (let r = 0.32; r <= 0.6801; r += 0.04) ratios.push(Number(r.toFixed(2)));
@@ -418,14 +597,14 @@
                     + severeUnusedPenalty
                     + Math.abs(ratio - preferredRatio) * 3,
                 placements: [
-                    { id: firstId, xOffset: 0, width: leftW, height: rowH, naturalHeight: h1 },
-                    { id: secondId, xOffset: leftW + gap, width: rightW, height: rowH, naturalHeight: h2 }
+                    { id: firstId, xOffset: 0, width: leftW, height: rowH, naturalHeight: h1, fullWidthNaturalHeight: firstFullHeight },
+                    { id: secondId, xOffset: leftW + gap, width: rightW, height: rowH, naturalHeight: h2, fullWidthNaturalHeight: secondFullHeight }
                 ]
             });
         });
 
-        const firstH = measure(first, contentW, mode);
-        const secondH = measure(second, contentW, mode);
+        const firstH = firstFullHeight;
+        const secondH = secondFullHeight;
         candidates.push({
             kind: 'stack',
             totalHeight: firstH + mode.sectionGap + secondH,
@@ -433,8 +612,8 @@
             unusedRatio: 0,
             score: firstH + mode.sectionGap + secondH,
             placements: [
-                { id: firstId, xOffset: 0, width: contentW, height: firstH, naturalHeight: firstH },
-                { id: secondId, xOffset: 0, width: contentW, height: secondH, naturalHeight: secondH, newRow: true }
+                { id: firstId, xOffset: 0, width: contentW, height: firstH, naturalHeight: firstH, fullWidthNaturalHeight: firstH },
+                { id: secondId, xOffset: 0, width: contentW, height: secondH, naturalHeight: secondH, fullWidthNaturalHeight: secondH, newRow: true }
             ]
         });
 
@@ -464,6 +643,7 @@
                         naturalHeight: placement.naturalHeight,
                         adaptiveComposition: true,
                         compositionAxis: 'row',
+                        fullWidthNaturalHeight: placement.fullWidthNaturalHeight,
                         unusedHeight,
                         unusedHeightRatio
                     }
@@ -481,6 +661,7 @@
                     naturalHeight: placement.naturalHeight,
                     adaptiveComposition: true,
                     compositionAxis: 'stack',
+                    fullWidthNaturalHeight: placement.fullWidthNaturalHeight,
                     unusedHeight: 0,
                     unusedHeightRatio: 0
                 }
@@ -850,6 +1031,10 @@
 
     function layout(composition, options = {}) {
         ACTIVE_MEASURE_TEXT = typeof options.measureText === 'function' ? options.measureText : null;
+        ACTIVE_TOKENS = options.tokens && typeof options.tokens === 'object' ? options.tokens : null;
+        ACTIVE_TEXT_WIDTH_CACHE = new Map();
+        ACTIVE_LINE_COUNT_CACHE = new Map();
+        ACTIVE_BLOCK_MEASURE_CACHE = new WeakMap();
         const blocks = getBlocks(composition)
             .filter(Boolean)
             .sort((a, b) => {
@@ -911,7 +1096,7 @@
     }
 
     global.MeetMindLayoutEngine = Object.freeze({
-        version: 'golden-1.8.2-intelligent-composition',
+        version: 'golden-1.9.0-pdf-hardening-v2',
         PAGE,
         MODES,
         layout

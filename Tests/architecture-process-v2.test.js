@@ -26,8 +26,10 @@ assert.strictEqual(typeof renderer, 'function', 'Architecture v2 renderer did no
 
 function createContext(language = 'en') {
   const textCalls = [];
+  const lineCalls = [];
   return {
     textCalls,
+    lineCalls,
     density: 'regular',
     options: { language },
     report: { language },
@@ -37,6 +39,9 @@ function createContext(language = 'en') {
     },
     rect() {},
     svgPath() {},
+    line(options) {
+      lineCalls.push(options);
+    },
     text(text, options) {
       textCalls.push({ text: String(text), options });
     }
@@ -62,7 +67,7 @@ const components = {
 const componentCtx = createContext();
 renderer(components, componentCtx);
 assert.ok(
-  !componentCtx.textCalls.some(call => ['→', '←', '↓'].includes(call.text)),
+  componentCtx.lineCalls.length === 0,
   'Components mode must not invent directional arrows.'
 );
 
@@ -84,15 +89,38 @@ const process = {
 const processCtx = createContext();
 renderer(process, processCtx);
 assert.ok(
-  processCtx.textCalls.some(call => call.text === '→'),
-  'Explicit process mode must render a directional connector.'
+  processCtx.lineCalls.length >= 3,
+  'Explicit process mode must render a vector directional connector.'
+);
+assert.ok(
+  !processCtx.textCalls.some(call => ['→', '←', '↓'].includes(call.text)),
+  'Process connectors must not depend on a font containing arrow glyphs.'
 );
 
 const rtlCtx = createContext('ar');
 renderer(process, rtlCtx);
 assert.ok(
-  rtlCtx.textCalls.some(call => call.text === '←'),
-  'RTL process mode must reverse the horizontal connector direction.'
+  rtlCtx.lineCalls.length >= 3,
+  'RTL process mode must retain vector connectors for RenderContext mirroring.'
+);
+
+const multiRow = {
+  id: 'architecture',
+  geometry: { x: 10, y: 10, width: 748, height: 240 },
+  data: {
+    sections: Array.from({ length: 5 }, (_, index) => ({
+      title: `Section ${index + 1}`,
+      layout: 'components',
+      items: [{ title: `Item ${index + 1}`, description: `Description ${index + 1}` }]
+    }))
+  }
+};
+const multiRowCtx = createContext();
+renderer(multiRow, multiRowCtx);
+assert.ok(
+  multiRowCtx.textCalls.some(call => call.text === 'Section 5') &&
+    multiRowCtx.textCalls.some(call => call.text === 'Item 5'),
+  'Architecture renderer silently dropped a section beyond the first four.'
 );
 
 console.log('Architecture & Process v2 semantic regression passed.');

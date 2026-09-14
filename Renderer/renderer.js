@@ -20,7 +20,7 @@
     'use strict';
 
     const NAME = 'MeetMindRenderer';
-    const VERSION = '1.0.7-semantic-icons-v2';
+    const VERSION = '1.1.0-pdf-hardening-v2';
 
     class RendererError extends Error {
         constructor(code, message, details) {
@@ -273,16 +273,16 @@
         const y0=g.y+sp.padY+h.lineHeight+sp.titleGap, gap=3, innerW=g.width-sp.padX*2;
         const cols=metrics.length===5?3:Math.min(4,Math.max(1,metrics.length));
         const rows=Math.max(1,Math.ceil(metrics.length/cols));
-        const cellW=(innerW-gap*(cols-1))/cols, cellH=(g.y+g.height-sp.padY-y0-gap*(rows-1))/rows;
+        const cellH=(g.y+g.height-sp.padY-y0-gap*(rows-1))/rows;
         const ls=summaryStyle(ctx,'metricLabel',{font:'semibold',size:5.2,lineHeight:6.2,color:'textSecondary'});
         const base=summaryStyle(ctx,'metricValue',{font:'bold',size:8.5,lineHeight:9.5,color:'textPrimary'});
         const cs=summaryStyle(ctx,'metricContext',{font:'regular',size:4.8,lineHeight:5.8,color:'textSecondary'});
 
         metrics.forEach((m,i)=>{
             const row=Math.floor(i/cols), rowCount=Math.min(cols,metrics.length-row*cols);
-            const offset=(cols-rowCount)*(cellW+gap)/2, col=i-row*cols;
-            const x=g.x+sp.padX+offset+col*(cellW+gap), y=y0+row*(cellH+gap);
-            ctx.rect({x,y,width:cellW,height:cellH,fill:'cardBg',stroke:'borderDefault',borderWidth:.5,radius:3});
+            const rowCellW=(innerW-gap*(rowCount-1))/rowCount, col=i-row*cols;
+            const x=g.x+sp.padX+col*(rowCellW+gap), y=y0+row*(cellH+gap);
+            ctx.rect({x,y,width:rowCellW,height:cellH,fill:'cardBg',stroke:'borderDefault',borderWidth:.5,radius:3});
 
             const semantic = semanticIcons?.resolveMetric?.(m) || { name: 'file-text', color: 'purplePrimary' };
             const iconSize = Math.min(8, Math.max(6.8, cellH * .14));
@@ -292,19 +292,19 @@
             const value=metricDisplayValue(m);
             const context=metricContextText(m);
             const labelX=x+16;
-            const labelW=Math.max(18,cellW-21);
+            const labelW=Math.max(18,rowCellW-21);
             const labelLines=summaryWrap(ctx,label,labelW,ls), labelH=labelLines.length*ls.lineHeight;
-            const contextLines=context?summaryWrap(ctx,context,cellW-10,cs):[];
+            const contextLines=context?summaryWrap(ctx,context,rowCellW-10,cs):[];
             const contextH=contextLines.length*cs.lineHeight+(contextLines.length?1.5:0);
             labelLines.forEach((line,j)=>ctx.text(line,{x:labelX,y:y+4+j*ls.lineHeight,size:ls.size,font:ls.font,color:ls.color}));
 
             let vs={...base};
-            let lines=summaryWrap(ctx,value,cellW-10,vs);
+            let lines=summaryWrap(ctx,value,rowCellW-10,vs);
             const top=y+7+labelH;
             const avail=y+cellH-3-top-contextH;
             while(vs.size>6.6 && lines.length*vs.lineHeight>avail){
                 vs={...vs,size:vs.size-.4,lineHeight:vs.lineHeight-.4};
-                lines=summaryWrap(ctx,value,cellW-10,vs);
+                lines=summaryWrap(ctx,value,rowCellW-10,vs);
             }
             if(lines.length*vs.lineHeight>avail+.5) {
                 throw new RendererError('METRIC_LAYOUT_UNDERSIZED','Metric value/context does not fit allocated geometry.',{index:i,geometry:g});
@@ -386,6 +386,8 @@
     function estimateFullWidthHeight(block, fullWidth, density) {
         const id = canonicalId(block);
         const g = block.geometry || {};
+        const exactFullWidth = Number(block?.layout?.fullWidthNaturalHeight);
+        if (Number.isFinite(exactFullWidth) && exactFullWidth > 0) return exactFullWidth;
         const currentWidth = Math.max(1, Number(g.width) || fullWidth);
         const measured = Number(block?.layout?.naturalHeight);
         const natural = Number.isFinite(measured) && measured > 0 ? measured : Math.max(42, Number(g.height) || 42);

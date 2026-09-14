@@ -66,3 +66,9 @@ jobs:
 
       - name: Run Persian/Arabic OpenType shaping contract
         run: node Tests/rtl-pdf-fa-ar.test.js
+
+      - name: Run PDF hardening v2 behavioral contract
+        run: node Tests/pdf-hardening-v2-contract.test.js
+
+      - name: Run PDF hardening v2 static guardrails
+        run: node Tests/pdf-hardening-v2-static.test.js
