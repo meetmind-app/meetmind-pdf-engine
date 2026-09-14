@@ -5,7 +5,8 @@
  * - process/flow arrows are rendered ONLY when explicitly supported by report_json;
  * - components are rendered as non-directional semantic blocks;
  * - mixed architecture sections are supported;
- * - no content truncation. If immutable geometry is insufficient, throw.
+ * - no content truncation: every supplied section and item is rendered;
+ * - geometry is measured before drawing and can use multiple section rows.
  */
 (function attachArchitectureV2(globalScope) {
     'use strict';
@@ -35,6 +36,10 @@
         data: 'database',
         other: 'file-text'
     });
+    const ITEM_ICON_SIZE = 6.4;
+    const ITEM_ICON_GAP = 3.2;
+    const DESIGN_MIN_SCALE = 0.78;
+    const EMERGENCY_MIN_SCALE = 0.24;
 
     function clean(value) {
         return value === null || value === undefined
@@ -52,10 +57,6 @@
         ).trim().toLowerCase().replace(/_/g, '-');
         const base = raw.split('-')[0] === 'in' ? 'id' : raw.split('-')[0];
         return TITLES[base] ? base : 'en';
-    }
-
-    function isRtl(ctx) {
-        return ['ar', 'fa'].includes(language(ctx));
     }
 
     function density(ctx) {
@@ -174,6 +175,21 @@
         });
     }
 
+    function drawHorizontalConnector(ctx, x, y, width, color) {
+        const startX = x + 2;
+        const tipX = x + width - 2;
+        ctx.line({ x1: startX, y1: y, x2: tipX, y2: y, color, thickness: .55 });
+        ctx.line({ x1: tipX, y1: y, x2: tipX - 2.4, y2: y - 2, color, thickness: .55 });
+        ctx.line({ x1: tipX, y1: y, x2: tipX - 2.4, y2: y + 2, color, thickness: .55 });
+    }
+
+    function drawVerticalConnector(ctx, x, y, height, color) {
+        const tipY = y + height;
+        ctx.line({ x1: x, y1: y, x2: x, y2: tipY, color, thickness: .55 });
+        ctx.line({ x1: x, y1: tipY, x2: x - 2, y2: tipY - 2.4, color, thickness: .55 });
+        ctx.line({ x1: x, y1: tipY, x2: x + 2, y2: tipY - 2.4, color, thickness: .55 });
+    }
+
     function architectureData(block, report) {
         const raw = block?.data ?? block?.content ?? block?.items ?? block?.value ?? report?.architecture;
         if (Array.isArray(raw)) return { mode: '', sections: raw };
@@ -218,52 +234,171 @@
         };
     }
 
-    function measureComponentGrid(ctx, items, width, titleStyle, descStyle, columns, gap) {
-        if (!items.length) return 0;
+    function itemGeometry(originX, width, scale, iconOffset = 0) {
+        const iconSize = ITEM_ICON_SIZE * scale;
+        const iconGap = Math.max(2.2, ITEM_ICON_GAP * scale);
+        const iconX = originX + iconOffset;
+        const textX = iconX + iconSize + iconGap;
+        const textRight = originX + width - 2;
+        return {
+            iconX,
+            iconSize,
+            textX,
+            textWidth: Math.max(4, textRight - textX)
+        };
+    }
+
+    function measureComponentGrid(ctx, items, width, titleStyle, descStyle, columns, gap, scale) {
+        if (!items.length) return { height: 0, rows: [] };
         const cellW = (width - gap * (columns - 1)) / columns;
         const rows = Math.ceil(items.length / columns);
         let total = 0;
+        const measuredRows = [];
         for (let row = 0; row < rows; row += 1) {
             let rowHeight = 0;
+            const measuredItems = [];
             for (let col = 0; col < columns; col += 1) {
                 const item = items[row * columns + col];
                 if (!item) continue;
                 const data = itemText(item);
-                const textW = Math.max(25, cellW - 14);
-                const h = Math.max(8, wrap(ctx, data.title, textW, titleStyle).length * titleStyle.lineHeight)
-                    + (data.description ? wrap(ctx, data.description, textW, descStyle).length * descStyle.lineHeight + 1 : 0)
+                const geometry = itemGeometry(0, cellW, scale);
+                const titleLines = wrap(ctx, data.title, geometry.textWidth, titleStyle);
+                const descLines = data.description ? wrap(ctx, data.description, geometry.textWidth, descStyle) : [];
+                const h = Math.max(geometry.iconSize, titleLines.length * titleStyle.lineHeight)
+                    + (descLines.length ? descLines.length * descStyle.lineHeight + 1 : 0)
                     + 4;
                 rowHeight = Math.max(rowHeight, h);
+                measuredItems.push({ col, data, titleLines, descLines });
             }
+            measuredRows.push({ height: rowHeight, items: measuredItems });
             total += rowHeight + (row < rows - 1 ? gap : 0);
         }
-        return total;
+        return { height: total, rows: measuredRows, columns, cellW, gap };
     }
 
-    function measureProcess(ctx, items, width, titleStyle, descStyle, horizontal, gap) {
-        if (!items.length) return 0;
+    function measureProcess(ctx, items, width, titleStyle, descStyle, horizontal, gap, scale) {
+        if (!items.length) return { height: 0, items: [], horizontal };
         if (!horizontal) {
-            return items.reduce((sum, item, index) => {
+            let height = 0;
+            const measuredItems = items.map((item, index) => {
                 const data = itemText(item);
-                const textW = Math.max(25, width - 16);
-                const h = Math.max(8, wrap(ctx, data.title, textW, titleStyle).length * titleStyle.lineHeight)
-                    + (data.description ? wrap(ctx, data.description, textW, descStyle).length * descStyle.lineHeight + 1 : 0)
-                    + 4;
-                return sum + h + (index < items.length - 1 ? gap + 6 : 0);
-            }, 0);
+                const geometry = itemGeometry(0, width, scale);
+                const titleLines = wrap(ctx, data.title, geometry.textWidth, titleStyle);
+                const descLines = data.description ? wrap(ctx, data.description, geometry.textWidth, descStyle) : [];
+                const itemHeight = Math.max(
+                    geometry.iconSize,
+                    titleLines.length * titleStyle.lineHeight + descLines.length * descStyle.lineHeight
+                );
+                height += itemHeight + (index < items.length - 1 ? 2 + 7 * scale : 0);
+                return { data, titleLines, descLines, itemHeight };
+            });
+            return { height, items: measuredItems, horizontal };
         }
         const arrowSpace = 12;
         const stepW = Math.max(34, (width - arrowSpace * (items.length - 1)) / items.length);
         let maxH = 0;
-        items.forEach(item => {
+        const measuredItems = items.map(item => {
             const data = itemText(item);
-            const textW = Math.max(22, stepW - 12);
-            const h = Math.max(8, wrap(ctx, data.title, textW, titleStyle).length * titleStyle.lineHeight)
-                + (data.description ? wrap(ctx, data.description, textW, descStyle).length * descStyle.lineHeight + 1 : 0)
+            const geometry = itemGeometry(0, stepW, scale, 4);
+            const titleLines = wrap(ctx, data.title, geometry.textWidth, titleStyle);
+            const descLines = data.description ? wrap(ctx, data.description, geometry.textWidth, descStyle) : [];
+            const h = Math.max(geometry.iconSize, titleLines.length * titleStyle.lineHeight)
+                + (descLines.length ? descLines.length * descStyle.lineHeight + 1 : 0)
                 + 6;
             maxH = Math.max(maxH, h);
+            return { data, titleLines, descLines };
         });
-        return maxH;
+        return {
+            height: Math.max(28, maxH),
+            items: measuredItems,
+            horizontal,
+            stepW,
+            arrowSpace
+        };
+    }
+
+    function splitSectionRows(sections) {
+        const rows = [];
+        for (let index = 0; index < sections.length; index += 4) {
+            rows.push(sections.slice(index, index + 4));
+        }
+        return rows;
+    }
+
+    function measureArchitectureRows(ctx, sections, root, innerW, sectionGap, scale, bases) {
+        const rows = splitSectionRows(sections);
+        const measuredRows = rows.map((rowSections, rowIndex) => {
+            const sectionW = (innerW - sectionGap * (rowSections.length - 1)) / rowSections.length;
+            const measuredSections = rowSections.map((section, indexInRow) => {
+                const logicalIndex = rowIndex * 4 + indexInRow;
+                const items = Array.isArray(section?.items) ? section.items : [];
+                const mode = explicitMode(section, root);
+                const title = clean(section?.title || section?.name || section?.label);
+                const sectionInnerW = Math.max(4, sectionW - 12);
+                const noStyle = scaled(bases.sectionNo, scale);
+                const titleStyle = scaled(bases.sectionTitle, scale);
+                const itemStyle = scaled(bases.itemTitle, scale);
+                const descStyle = scaled(bases.description, scale);
+                const titleW = Math.max(4, sectionInnerW - 18);
+                const titleLines = wrap(ctx, title, titleW, titleStyle);
+                const headerHeight = Math.max(noStyle.lineHeight, titleLines.length * titleStyle.lineHeight);
+                const horizontal = mode === 'process'
+                    && items.length > 1
+                    && items.length <= 4
+                    && sectionInnerW / items.length >= 62;
+                const body = mode === 'process'
+                    ? measureProcess(ctx, items, sectionInnerW, itemStyle, descStyle, horizontal, 3, scale)
+                    : measureComponentGrid(
+                        ctx,
+                        items,
+                        sectionInnerW,
+                        itemStyle,
+                        descStyle,
+                        sectionInnerW >= 210 && items.length > 1 ? 2 : 1,
+                        3,
+                        scale
+                    );
+                return {
+                    section,
+                    logicalIndex,
+                    mode,
+                    titleLines,
+                    noStyle,
+                    titleStyle,
+                    itemStyle,
+                    descStyle,
+                    sectionInnerW,
+                    titleW,
+                    headerHeight,
+                    body,
+                    height: 6 + headerHeight + 5 + body.height + 4
+                };
+            });
+            return {
+                sections: measuredSections,
+                sectionW,
+                height: Math.max(24, ...measuredSections.map(section => section.height))
+            };
+        });
+        return {
+            rows: measuredRows,
+            height: measuredRows.reduce((sum, row) => sum + row.height, 0)
+                + Math.max(0, measuredRows.length - 1) * sectionGap
+        };
+    }
+
+    function fitArchitecture(ctx, sections, root, innerW, sectionGap, preferredScale, availableHeight, bases) {
+        let scale = Math.max(DESIGN_MIN_SCALE, Math.min(1.35, preferredScale || 1));
+        let measured = measureArchitectureRows(ctx, sections, root, innerW, sectionGap, scale, bases);
+        while (scale > DESIGN_MIN_SCALE + .001 && measured.height > availableHeight + .01) {
+            scale = Math.max(DESIGN_MIN_SCALE, Number((scale - .02).toFixed(2)));
+            measured = measureArchitectureRows(ctx, sections, root, innerW, sectionGap, scale, bases);
+        }
+        while (scale > EMERGENCY_MIN_SCALE + .001 && measured.height > availableHeight + .01) {
+            scale = Math.max(EMERGENCY_MIN_SCALE, Number((scale - .02).toFixed(2)));
+            measured = measureArchitectureRows(ctx, sections, root, innerW, sectionGap, scale, bases);
+        }
+        return { scale, measured };
     }
 
     function renderArchitectureV2(block, ctx) {
@@ -293,178 +428,212 @@
         if (!sections.length) return;
 
         const sectionGap = sp.cardGap;
-        const sectionCount = Math.min(4, sections.length);
         const innerX = g.x + sp.padX;
         const innerW = g.width - sp.padX * 2;
-        const sectionW = (innerW - sectionGap * (sectionCount - 1)) / sectionCount;
-        const rtl = isRtl(ctx);
+        // RenderContext mirrors all geometry and shaped text for fa/ar. Keep
+        // coordinates in logical LTR space here to avoid reversing RTL twice.
 
         const sectionNoBase = style(ctx, 'architectureSectionNo', { font: 'bold', size: 6.5, lineHeight: 7.5, color: 'textPrimary' });
         const sectionTitleBase = style(ctx, 'architectureSectionTitle', { font: 'bold', size: 6.3, lineHeight: 7.7, color: 'textPrimary' });
         const itemTitleBase = style(ctx, 'architectureItemTitle', { font: 'semibold', size: 5.1, lineHeight: 6.2, color: 'textPrimary' });
         const descBase = style(ctx, 'architectureDescription', { font: 'regular', size: 4.6, lineHeight: 5.6, color: 'textSecondary' });
 
-        sections.slice(0, sectionCount).forEach((section, logicalIndex) => {
-            const visualIndex = rtl ? sectionCount - 1 - logicalIndex : logicalIndex;
-            const x = innerX + visualIndex * (sectionW + sectionGap);
-            const accent = ACCENTS[logicalIndex % ACCENTS.length];
-            ctx.rect({
-                x, y: contentY, width: sectionW, height: availableHeight,
-                fill: 'cardBg', stroke: 'borderDefault', borderWidth: .5, radius: 3
+        const bases = {
+            sectionNo: sectionNoBase,
+            sectionTitle: sectionTitleBase,
+            itemTitle: itemTitleBase,
+            description: descBase
+        };
+        const preferredScale = Number(block?.layout?.contentScale) || 1;
+        const fitted = fitArchitecture(
+            ctx,
+            sections,
+            data,
+            innerW,
+            sectionGap,
+            preferredScale,
+            availableHeight,
+            bases
+        );
+        const scale = fitted.scale;
+        const measuredRows = fitted.measured.rows;
+        if (scale < DESIGN_MIN_SCALE - .001) {
+            console.warn('ARCHITECTURE_EMERGENCY_SCALE', {
+                scale,
+                requiredHeight: fitted.measured.height,
+                availableHeight,
+                sections: sections.length
             });
+        }
+        if (fitted.measured.height > availableHeight + .5) {
+            console.warn('ARCHITECTURE_LAYOUT_OVERFLOW', {
+                requiredHeight: fitted.measured.height,
+                availableHeight,
+                sections: sections.length
+            });
+        }
 
-            const items = Array.isArray(section?.items) ? section.items : [];
-            const mode = explicitMode(section, data);
-            const sectionTitle = clean(section?.title || section?.name || section?.label);
-            const sectionInnerX = x + 6;
-            const sectionInnerW = sectionW - 12;
-            let scale = Math.max(.78, Math.min(1.35, Number(block?.layout?.contentScale) || 1));
+        const extraPerRow = measuredRows.length
+            ? Math.max(0, availableHeight - fitted.measured.height) / measuredRows.length
+            : 0;
+        let rowY = contentY;
 
-            function requiredHeight(testScale) {
-                const noStyle = scaled(sectionNoBase, testScale);
-                const titleStyle = scaled(sectionTitleBase, testScale);
-                const itemStyle = scaled(itemTitleBase, testScale);
-                const descStyle = scaled(descBase, testScale);
-                const titleW = Math.max(25, sectionInnerW - 18);
-                const sectionHeaderH = Math.max(noStyle.lineHeight, wrap(ctx, sectionTitle, titleW, titleStyle).length * titleStyle.lineHeight) + 5;
-                const itemAreaW = sectionInnerW;
-                if (mode === 'process') {
-                    const horizontal = items.length > 1 && items.length <= 4 && itemAreaW / items.length >= 62;
-                    return sectionHeaderH + measureProcess(ctx, items, itemAreaW, itemStyle, descStyle, horizontal, 3);
-                }
-                const columns = itemAreaW >= 210 && items.length > 1 ? 2 : 1;
-                return sectionHeaderH + measureComponentGrid(ctx, items, itemAreaW, itemStyle, descStyle, columns, 3);
-            }
+        measuredRows.forEach(row => {
+            const rowHeight = row.height + extraPerRow;
+            row.sections.forEach((sectionModel, indexInRow) => {
+                const visualIndex = indexInRow;
+                const x = innerX + visualIndex * (row.sectionW + sectionGap);
+                const sectionInnerX = x + 6;
+                const accent = ACCENTS[sectionModel.logicalIndex % ACCENTS.length];
+                ctx.rect({
+                    x, y: rowY, width: row.sectionW, height: rowHeight,
+                    fill: 'cardBg', stroke: 'borderDefault', borderWidth: .5, radius: 3
+                });
 
-            while (scale > .78 && requiredHeight(scale) > availableHeight - 8) scale -= .04;
-            if (requiredHeight(scale) > availableHeight - 7 + .5) {
-                throw new Error(
-                    `ARCHITECTURE_LAYOUT_UNDERSIZED: section ${logicalIndex + 1} requires more height than allocated.`
+                ctx.text(String(sectionModel.logicalIndex + 1), {
+                    x: sectionInnerX,
+                    y: rowY + 6,
+                    size: sectionModel.noStyle.size,
+                    font: sectionModel.noStyle.font,
+                    color: accent
+                });
+                drawLines(
+                    ctx,
+                    sectionModel.titleLines,
+                    sectionInnerX + 13,
+                    rowY + 6,
+                    sectionModel.titleStyle,
+                    sectionModel.titleW,
+                    'left'
                 );
-            }
+                let y = rowY + 6 + sectionModel.headerHeight + 5;
 
-            const noStyle = scaled(sectionNoBase, scale);
-            const sectionTitleStyle = scaled(sectionTitleBase, scale);
-            const itemTitleStyle = scaled(itemTitleBase, scale);
-            const descStyle = scaled(descBase, scale);
-            const titleW = Math.max(25, sectionInnerW - 18);
-
-            ctx.text(String(logicalIndex + 1), {
-                x: sectionInnerX,
-                y: contentY + 6,
-                size: noStyle.size,
-                font: noStyle.font,
-                color: accent
-            });
-            const sectionTitleLines = wrap(ctx, sectionTitle, titleW, sectionTitleStyle);
-            const titleX = sectionInnerX + 13;
-            drawLines(ctx, sectionTitleLines, titleX, contentY + 6, sectionTitleStyle, titleW, rtl ? 'right' : 'left');
-            let y = contentY + 6 + Math.max(noStyle.lineHeight, sectionTitleLines.length * sectionTitleStyle.lineHeight) + 5;
-
-            if (mode === 'process') {
-                const horizontal = items.length > 1 && items.length <= 4 && sectionInnerW / items.length >= 62;
-                if (horizontal) {
-                    const arrowSpace = 12;
-                    const stepW = Math.max(34, (sectionInnerW - arrowSpace * (items.length - 1)) / Math.max(1, items.length));
-                    items.forEach((item, itemIndex) => {
-                        const visualItemIndex = rtl ? items.length - 1 - itemIndex : itemIndex;
+                if (sectionModel.mode === 'process' && sectionModel.body.horizontal) {
+                    const { stepW, arrowSpace } = sectionModel.body;
+                    sectionModel.body.items.forEach((item, itemIndex) => {
+                        const visualItemIndex = itemIndex;
                         const stepX = sectionInnerX + visualItemIndex * (stepW + arrowSpace);
-                        const itemData = itemText(item);
-                        const iconName = TYPE_ICONS[itemData.type] || TYPE_ICONS.process;
-                        const textX = stepX + 10;
-                        const textW = Math.max(20, stepW - 12);
+                        const geometry = itemGeometry(stepX, stepW, scale, 4);
+                        const iconName = TYPE_ICONS[item.data.type] || TYPE_ICONS.process;
                         ctx.rect({
-                            x: stepX, y, width: stepW, height: Math.max(28, bottom - y - 4),
-                            fill: 'cardBg', stroke: 'borderDefault', borderWidth: .35, radius: 2.5
+                            x: stepX,
+                            y,
+                            width: stepW,
+                            height: Math.max(sectionModel.body.height, rowY + rowHeight - y - 4),
+                            fill: 'cardBg',
+                            stroke: 'borderDefault',
+                            borderWidth: .35,
+                            radius: 2.5
                         });
-                        drawIcon(ctx, iconName, stepX + 4, y + 6, 6.4 * scale, accent);
-                        const titleLines = wrap(ctx, itemData.title, textW, itemTitleStyle);
+                        drawIcon(ctx, iconName, geometry.iconX, y + 6, geometry.iconSize, accent);
                         let itemY = y + 5;
-                        itemY += drawLines(ctx, titleLines, textX, itemY, itemTitleStyle, textW, rtl ? 'right' : 'left');
-                        if (itemData.description) {
-                            const descLines = wrap(ctx, itemData.description, textW, descStyle);
+                        itemY += drawLines(
+                            ctx,
+                            item.titleLines,
+                            geometry.textX,
+                            itemY,
+                            sectionModel.itemStyle,
+                            geometry.textWidth,
+                            'left'
+                        );
+                        if (item.descLines.length) {
                             itemY += 1;
-                            drawLines(ctx, descLines, textX, itemY, descStyle, textW, rtl ? 'right' : 'left');
+                            drawLines(
+                                ctx,
+                                item.descLines,
+                                geometry.textX,
+                                itemY,
+                                sectionModel.descStyle,
+                                geometry.textWidth,
+                                'left'
+                            );
                         }
 
-                        if (itemIndex < items.length - 1) {
-                            const arrow = rtl ? '←' : '→';
-                            const arrowStyle = scaled({ font: 'bold', size: 7.2, lineHeight: 8, color: 'textMuted' }, scale);
-                            const arrowVisualIndex = rtl ? items.length - 2 - itemIndex : itemIndex;
-                            const arrowX = sectionInnerX + (arrowVisualIndex + 1) * stepW + arrowVisualIndex * arrowSpace + 2;
-                            ctx.text(arrow, {
-                                x: arrowX,
-                                y: y + 9,
-                                size: arrowStyle.size,
-                                font: arrowStyle.font,
-                                color: arrowStyle.color
-                            });
+                        if (itemIndex < sectionModel.body.items.length - 1) {
+                            const connectorX = sectionInnerX
+                                + (itemIndex + 1) * stepW
+                                + itemIndex * arrowSpace;
+                            drawHorizontalConnector(ctx, connectorX, y + 10, arrowSpace, 'textMuted');
                         }
                     });
-                } else {
-                    items.forEach((item, itemIndex) => {
-                        const itemData = itemText(item);
-                        const iconName = TYPE_ICONS[itemData.type] || TYPE_ICONS.process;
-                        drawIcon(ctx, iconName, sectionInnerX, y + 4, 6.4 * scale, accent);
-                        const textX = sectionInnerX + 10;
-                        const textW = sectionInnerW - 10;
-                        const titleLines = wrap(ctx, itemData.title, textW, itemTitleStyle);
-                        y += drawLines(ctx, titleLines, textX, y, itemTitleStyle, textW, rtl ? 'right' : 'left');
-                        if (itemData.description) {
-                            const descLines = wrap(ctx, itemData.description, textW, descStyle);
-                            y += drawLines(ctx, descLines, textX, y, descStyle, textW, rtl ? 'right' : 'left');
+                } else if (sectionModel.mode === 'process') {
+                    sectionModel.body.items.forEach((item, itemIndex) => {
+                        const geometry = itemGeometry(sectionInnerX, sectionModel.sectionInnerW, scale);
+                        const iconName = TYPE_ICONS[item.data.type] || TYPE_ICONS.process;
+                        drawIcon(ctx, iconName, geometry.iconX, y + 4, geometry.iconSize, accent);
+                        let itemY = y;
+                        itemY += drawLines(
+                            ctx,
+                            item.titleLines,
+                            geometry.textX,
+                            itemY,
+                            sectionModel.itemStyle,
+                            geometry.textWidth,
+                            'left'
+                        );
+                        if (item.descLines.length) {
+                            drawLines(
+                                ctx,
+                                item.descLines,
+                                geometry.textX,
+                                itemY,
+                                sectionModel.descStyle,
+                                geometry.textWidth,
+                                'left'
+                            );
                         }
-                        if (itemIndex < items.length - 1) {
+                        y += item.itemHeight;
+                        if (itemIndex < sectionModel.body.items.length - 1) {
                             y += 2;
-                            ctx.text('↓', {
-                                x: rtl ? sectionInnerX + sectionInnerW - 7 : sectionInnerX + 2,
+                            drawVerticalConnector(
+                                ctx,
+                                sectionInnerX + ITEM_ICON_SIZE * scale / 2,
                                 y,
-                                size: 6.8 * scale,
-                                font: 'bold',
-                                color: 'textMuted'
-                            });
+                                5 * scale,
+                                'textMuted'
+                            );
                             y += 7 * scale;
                         }
                     });
-                }
-            } else {
-                const columns = sectionInnerW >= 210 && items.length > 1 ? 2 : 1;
-                const gap = 3;
-                const cellW = (sectionInnerW - gap * (columns - 1)) / columns;
-                const rows = Math.ceil(items.length / columns);
-                let rowY = y;
-                for (let row = 0; row < rows; row += 1) {
-                    const rowItems = [];
-                    let rowHeight = 0;
-                    for (let col = 0; col < columns; col += 1) {
-                        const item = items[row * columns + col];
-                        if (!item) continue;
-                        const itemData = itemText(item);
-                        const textW = Math.max(22, cellW - 14);
-                        const titleLines = wrap(ctx, itemData.title, textW, itemTitleStyle);
-                        const descLines = itemData.description ? wrap(ctx, itemData.description, textW, descStyle) : [];
-                        const h = Math.max(8, titleLines.length * itemTitleStyle.lineHeight)
-                            + descLines.length * descStyle.lineHeight + (descLines.length ? 1 : 0) + 4;
-                        rowHeight = Math.max(rowHeight, h);
-                        rowItems.push({ col, itemData, titleLines, descLines });
-                    }
-                    rowItems.forEach(({ col, itemData, titleLines, descLines }) => {
-                        const visualCol = rtl ? columns - 1 - col : col;
-                        const cellX = sectionInnerX + visualCol * (cellW + gap);
-                        const iconName = TYPE_ICONS[itemData.type] || TYPE_ICONS.other;
-                        drawIcon(ctx, iconName, cellX, rowY + 4, 6.4 * scale, accent);
-                        const textX = cellX + 10;
-                        const textW = cellW - 10;
-                        let itemY = rowY;
-                        itemY += drawLines(ctx, titleLines, textX, itemY, itemTitleStyle, textW, rtl ? 'right' : 'left');
-                        if (descLines.length) {
-                            itemY += 1;
-                            drawLines(ctx, descLines, textX, itemY, descStyle, textW, rtl ? 'right' : 'left');
-                        }
+                } else {
+                    const componentGrid = sectionModel.body;
+                    let componentY = y;
+                    componentGrid.rows.forEach((componentRow, rowIndex) => {
+                        componentRow.items.forEach(item => {
+                            const visualCol = item.col;
+                            const cellX = sectionInnerX + visualCol * (componentGrid.cellW + componentGrid.gap);
+                            const geometry = itemGeometry(cellX, componentGrid.cellW, scale);
+                            const iconName = TYPE_ICONS[item.data.type] || TYPE_ICONS.other;
+                            drawIcon(ctx, iconName, geometry.iconX, componentY + 4, geometry.iconSize, accent);
+                            let itemY = componentY;
+                            itemY += drawLines(
+                                ctx,
+                                item.titleLines,
+                                geometry.textX,
+                                itemY,
+                                sectionModel.itemStyle,
+                                geometry.textWidth,
+                                'left'
+                            );
+                            if (item.descLines.length) {
+                                itemY += 1;
+                                drawLines(
+                                    ctx,
+                                    item.descLines,
+                                    geometry.textX,
+                                    itemY,
+                                    sectionModel.descStyle,
+                                    geometry.textWidth,
+                                    'left'
+                                );
+                            }
+                        });
+                        componentY += componentRow.height
+                            + (rowIndex < componentGrid.rows.length - 1 ? componentGrid.gap : 0);
                     });
-                    rowY += rowHeight + (row < rows - 1 ? gap : 0);
                 }
-            }
+            });
+            rowY += rowHeight + sectionGap;
         });
     }
 

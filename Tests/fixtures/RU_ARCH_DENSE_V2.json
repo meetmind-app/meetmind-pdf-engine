@@ -1,0 +1,99 @@
+{
+  "id": "RU_ARCH_DENSE_V2",
+  "language": "ru",
+  "title": "Production-контур LOREVI и выпуск управленческого отчёта",
+  "summary": "Команда согласовала production-ready контур генерации отчётов, правила безопасного выпуска и критерии приёмки для плотных встреч. Архитектура должна сохранять каждый смысловой элемент, переносить целый блок на вторую страницу при нехватке места и не завершать экспорт из-за локальной плотности.",
+  "metrics": [
+    { "label": "Время генерации", "value": "< 3 секунд", "context": "повторный экспорт" },
+    { "label": "Допустимые страницы", "value": "1–2", "context": "executive report" },
+    { "label": "Сохранность данных", "value": "100%", "context": "без скрытой обрезки" },
+    { "label": "Языки регрессии", "value": "RU · EN · FA · AR" },
+    { "label": "Release gate", "value": "Visual + Content PASS" }
+  ],
+  "insights": [
+    { "title": "Измерение обязано совпадать с отрисовкой", "description": "Высота секций должна учитывать заголовки, иконки, описания, стрелки процесса и внутренние отступы." },
+    { "title": "Плотность не является ошибкой", "description": "При нехватке места semantic block переносится целиком, а не обрезается и не останавливает весь экспорт." },
+    { "title": "Повторная генерация должна быть быстрой", "description": "Версионированные шрифты и artwork повторно используются в пределах одной browser session." }
+  ],
+  "decisions": [
+    { "title": "Оставить максимум четыре секции в одном ряду", "description": "Дополнительные секции переходят на следующий ряд без потери исходного порядка." },
+    { "title": "Фиксировать тайминги этапов", "description": "Диагностика включает dependencies, assets, composition, layout, render и save." },
+    { "title": "Не менять production до полного gate", "description": "Merge разрешён только после визуальной и контентной проверки всех контрольных языков." }
+  ],
+  "risks": [
+    { "title": "Недооценённая высота", "description": "Упрощённая формула может создать пересечение текста с нижней границей карточки.", "mitigation": "Использовать те же правила переноса и геометрии, что и renderer." },
+    { "title": "Потеря последнего элемента", "description": "Ограничение массива при отрисовке может незаметно удалить содержимое.", "mitigation": "Проверять уникальный sentinel в extracted text." }
+  ],
+  "tasks": [
+    { "task": "Прогнать плотный русский fixture и проверить обе страницы", "owner": "PDF Engine", "due_date": "до merge" },
+    { "task": "Проверить повторный экспорт без повторной загрузки immutable assets", "owner": "QA", "due_date": "до merge" },
+    { "task": "Подтвердить отображение отсутствующих Owner и Due Date" },
+    { "task": "Сверить финальный артефакт с acceptance gate", "owner": "Release Owner", "due_date": "после CI" }
+  ],
+  "architecture": {
+    "sections": [
+      {
+        "title": "Входные данные",
+        "layout": "components",
+        "items": [
+          { "title": "Meeting payload", "description": "Канонический report contract и совместимые legacy-поля.", "type": "data" },
+          { "title": "Язык отчёта", "description": "Locale определяет шрифты, направление и подписи секций.", "type": "data" },
+          { "title": "Участники", "description": "Имена и роли используются в summary и responsibility block.", "type": "other" },
+          { "title": "Метрики", "description": "Значения, отношения, период и поясняющий контекст.", "type": "data" },
+          { "title": "Решения", "description": "Зафиксированные обязательства без домысливания связей.", "type": "other" },
+          { "title": "Риски", "description": "Описание, влияние и mitigation сохраняются полностью.", "type": "other" },
+          { "title": "Задачи", "description": "Owner и due date могут отсутствовать и заменяются тире.", "type": "other" },
+          { "title": "Visibility", "description": "Пользовательские настройки управляют составом блоков.", "type": "settings" }
+        ]
+      },
+      {
+        "title": "Подготовка",
+        "layout": "process",
+        "items": [
+          { "title": "Normalize", "description": "Поля приводятся к стабильному внутреннему контракту.", "type": "process" },
+          { "title": "Compose", "description": "Формируется канонический порядок смысловых блоков.", "type": "process" },
+          { "title": "Measure", "description": "Реальные glyph widths определяют перенос строк.", "type": "process" },
+          { "title": "Paginate", "description": "Плотный блок переносится целиком на continuation page.", "type": "process" },
+          { "title": "Allocate", "description": "Высота секций рассчитывается до начала рисования.", "type": "process" },
+          { "title": "Validate", "description": "Геометрия проверяется на границы канонического canvas.", "type": "process" },
+          { "title": "Prepare assets", "description": "Шрифты и mountain artwork берутся из memory cache.", "type": "process" },
+          { "title": "Create surface", "description": "PDF context получает полный набор ресурсов.", "type": "process" }
+        ]
+      },
+      {
+        "title": "Отрисовка",
+        "layout": "components",
+        "items": [
+          { "title": "Cards", "description": "Внешние и вложенные границы следуют общей системе.", "type": "other" },
+          { "title": "Typography", "description": "Размеры и line height зависят от resolved density.", "type": "other" },
+          { "title": "Semantic icons", "description": "Иконка имеет отдельную зону и явный gap до текста.", "type": "other" },
+          { "title": "RTL glyphs", "description": "Arabic и Persian проходят OpenType shaping и bidi.", "type": "other" },
+          { "title": "Metrics grid", "description": "Неполный последний ряд использует всю ширину.", "type": "other" },
+          { "title": "Task table", "description": "Пустые owner и due отображаются как em dash.", "type": "other" },
+          { "title": "Footer link", "description": "Clickable annotation следует фактической позиции бренда.", "type": "other" },
+          { "title": "ActualText", "description": "Логический Unicode сохраняется для RTL extraction.", "type": "data" }
+        ]
+      },
+      {
+        "title": "Контроль выпуска",
+        "layout": "components",
+        "items": [
+          { "title": "Unit tests", "description": "Контракты layout, renderer и schema остаются зелёными.", "type": "settings" },
+          { "title": "Visual RU", "description": "Плотный русский отчёт проверяется после рендера.", "type": "settings" },
+          { "title": "Visual EN", "description": "Английский regression подтверждает Latin layout.", "type": "settings" },
+          { "title": "Visual FA", "description": "Persian shaping и порядок слов остаются корректными.", "type": "settings" },
+          { "title": "Content integrity", "description": "Sentinel последнего элемента найден в PDF text layer.", "type": "settings" },
+          { "title": "Asset cache", "description": "Повторный export не создаёт сетевых запросов ресурсов.", "type": "settings" },
+          { "title": "Stage timings", "description": "Каждый этап имеет числовое значение в diagnostics.", "type": "settings" },
+          { "title": "RUOMEGA", "description": "Последний контрольный элемент обязан присутствовать в PDF.", "type": "settings" }
+        ]
+      }
+    ]
+  },
+  "owners": [
+    { "name": "PDF Engine", "responsibility": "Геометрия и renderer" },
+    { "name": "QA", "responsibility": "Visual и content integrity" },
+    { "name": "Release Owner", "responsibility": "Merge gate" }
+  ],
+  "participants": ["PDF Engine", "QA", "Release Owner"]
+}

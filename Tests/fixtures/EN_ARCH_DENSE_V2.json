@@ -1,0 +1,99 @@
+{
+  "id": "EN_ARCH_DENSE_V2",
+  "language": "en",
+  "title": "LOREVI production report pipeline readiness review",
+  "summary": "The team approved a production-grade report pipeline with explicit layout measurement, semantic pagination, immutable asset reuse, and stage-level diagnostics. Dense architecture content must remain complete, move as one coherent block when necessary, and never terminate the whole export because a local section needs more room.",
+  "metrics": [
+    { "label": "Repeat generation", "value": "< 3 seconds", "context": "warm browser session" },
+    { "label": "Page contract", "value": "1–2 pages" },
+    { "label": "Content retained", "value": "100%", "context": "no silent truncation" },
+    { "label": "Regression locales", "value": "RU · EN · FA · AR" },
+    { "label": "Release gate", "value": "Visual + Content PASS" }
+  ],
+  "insights": [
+    { "title": "Measurement must match drawing", "description": "Section height includes headings, icon gutters, descriptions, process connectors, and all internal spacing." },
+    { "title": "Density is a pagination signal", "description": "When the block cannot fit cleanly on page one, it moves coherently instead of clipping or aborting export." },
+    { "title": "Warm exports should reuse immutable bytes", "description": "Versioned font files and header artwork stay cached for the browser session." }
+  ],
+  "decisions": [
+    { "title": "Use at most four sections per row", "description": "Additional sections flow into another row while preserving their logical order." },
+    { "title": "Expose generation timings", "description": "Diagnostics cover dependencies, assets, composition, layout, render, and save." },
+    { "title": "Protect production with the full gate", "description": "Merge follows rendered artifact inspection and green content-integrity checks." }
+  ],
+  "risks": [
+    { "title": "Under-allocated architecture", "description": "A simplified estimate may let text cross a card boundary.", "mitigation": "Share the renderer's wrapping and geometry rules in layout measurement." },
+    { "title": "Silent final-item loss", "description": "Array slicing can remove meaningful content without raising an error.", "mitigation": "Assert a unique final sentinel in extracted PDF text." }
+  ],
+  "tasks": [
+    { "task": "Render the dense English fixture and inspect both pages", "owner": "PDF Engine", "due_date": "before merge" },
+    { "task": "Verify a warm export performs no immutable asset requests", "owner": "QA", "due_date": "before merge" },
+    { "task": "Confirm missing Owner and Due Date placeholders are visible" },
+    { "task": "Approve the final artifact against the acceptance gate", "owner": "Release Owner", "due_date": "after CI" }
+  ],
+  "architecture": {
+    "sections": [
+      {
+        "title": "Report inputs",
+        "layout": "components",
+        "items": [
+          { "title": "Meeting payload", "description": "Canonical report contract plus supported legacy aliases.", "type": "data" },
+          { "title": "Report locale", "description": "Locale selects fonts, reading direction, and section labels.", "type": "data" },
+          { "title": "Participants", "description": "Names and roles feed responsibility and summary blocks.", "type": "other" },
+          { "title": "Metrics", "description": "Values, relations, target periods, and supporting context.", "type": "data" },
+          { "title": "Decisions", "description": "Explicit commitments retained without invented relationships.", "type": "other" },
+          { "title": "Risks", "description": "Description, impact, and mitigation remain fully available.", "type": "other" },
+          { "title": "Tasks", "description": "Owner and due date may be missing and fall back to a dash.", "type": "other" },
+          { "title": "Visibility", "description": "User preferences control the included semantic blocks.", "type": "settings" }
+        ]
+      },
+      {
+        "title": "Preparation",
+        "layout": "process",
+        "items": [
+          { "title": "Normalize", "description": "Map source fields into one stable internal contract.", "type": "process" },
+          { "title": "Compose", "description": "Build the canonical order of semantic blocks.", "type": "process" },
+          { "title": "Measure", "description": "Real glyph widths determine every line break.", "type": "process" },
+          { "title": "Paginate", "description": "Move a dense block to a continuation page as a unit.", "type": "process" },
+          { "title": "Allocate", "description": "Calculate section geometry before drawing starts.", "type": "process" },
+          { "title": "Validate", "description": "Check every rectangle against the canonical canvas.", "type": "process" },
+          { "title": "Prepare assets", "description": "Read fonts and header artwork from the memory cache.", "type": "process" },
+          { "title": "Create surface", "description": "Give the PDF context all required resources.", "type": "process" }
+        ]
+      },
+      {
+        "title": "Rendering",
+        "layout": "components",
+        "items": [
+          { "title": "Cards", "description": "Outer and nested borders share a consistent visual system.", "type": "other" },
+          { "title": "Typography", "description": "Font size and line height follow resolved density.", "type": "other" },
+          { "title": "Semantic icons", "description": "Each icon has a separate zone and explicit text gap.", "type": "other" },
+          { "title": "RTL glyphs", "description": "Arabic and Persian use OpenType shaping plus bidi.", "type": "other" },
+          { "title": "Metrics grid", "description": "An incomplete last row consumes the available width.", "type": "other" },
+          { "title": "Task table", "description": "Missing owner and due values render as em dashes.", "type": "other" },
+          { "title": "Footer link", "description": "The annotation follows the visible brand position.", "type": "other" },
+          { "title": "ActualText", "description": "Logical Unicode remains available for RTL extraction.", "type": "data" }
+        ]
+      },
+      {
+        "title": "Release controls",
+        "layout": "components",
+        "items": [
+          { "title": "Unit tests", "description": "Layout, renderer, and schema contracts stay green.", "type": "settings" },
+          { "title": "Visual RU", "description": "The dense Russian report is inspected after rendering.", "type": "settings" },
+          { "title": "Visual EN", "description": "The English regression confirms Latin layout quality.", "type": "settings" },
+          { "title": "Visual FA", "description": "Persian shaping and word order remain correct.", "type": "settings" },
+          { "title": "Content integrity", "description": "The final sentinel is present in the PDF text layer.", "type": "settings" },
+          { "title": "Asset cache", "description": "A repeat export makes no new resource requests.", "type": "settings" },
+          { "title": "Stage timings", "description": "Every generation phase reports a numeric duration.", "type": "settings" },
+          { "title": "ENOMEGA", "description": "The final control item must appear in the exported PDF.", "type": "settings" }
+        ]
+      }
+    ]
+  },
+  "owners": [
+    { "name": "PDF Engine", "responsibility": "Geometry and rendering" },
+    { "name": "QA", "responsibility": "Visual and content integrity" },
+    { "name": "Release Owner", "responsibility": "Merge gate" }
+  ],
+  "participants": ["PDF Engine", "QA", "Release Owner"]
+}

@@ -14,9 +14,9 @@
     'use strict';
 
     const ENGINE_NAME = 'ExecutiveSlideEngine';
-    const ENGINE_VERSION = '1.4.6-semantic-icons-v2';
+    const ENGINE_VERSION = '1.5.0-pdf-hardening-v2';
     const ENGINE_BASE = 'https://meetmind-app.github.io/meetmind-pdf-engine/';
-    const CACHE_VERSION = 'golden-1.4.6-semantic-icons-v2';
+    const CACHE_VERSION = 'golden-1.5.0-pdf-hardening-v2';
 
     const PDF_LIB_CDN =
         'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js';
@@ -102,6 +102,19 @@
 
     let dependenciesPromise = null;
     const scriptPromises = new Map();
+    const assetBytesCache = new Map();
+    const assetCacheStats = { hits: 0, misses: 0 };
+    let lastGenerationDiagnostics = null;
+
+    function nowMilliseconds() {
+        return typeof global.performance?.now === 'function'
+            ? global.performance.now()
+            : Date.now();
+    }
+
+    function elapsedMilliseconds(startedAt) {
+        return Number((nowMilliseconds() - startedAt).toFixed(2));
+    }
 
     function withVersion(url) {
         const separator = url.includes('?') ? '&' : '?';
@@ -193,17 +206,33 @@
     }
 
     async function fetchBytes(path) {
-        const response = await fetch(engineUrl(path), {
-            cache: 'no-store'
-        });
+        const url = engineUrl(path);
+        let promise = assetBytesCache.get(url);
 
-        if (!response.ok) {
-            throw new Error(
-                `Failed to load ${path}: ${response.status} ${response.statusText}`
-            );
+        if (promise) {
+            assetCacheStats.hits += 1;
+        } else {
+            assetCacheStats.misses += 1;
+            promise = (async () => {
+                const response = await fetch(url, { cache: 'force-cache' });
+
+                if (!response.ok) {
+                    throw new Error(
+                        `Failed to load ${path}: ${response.status} ${response.statusText}`
+                    );
+                }
+
+                return response.arrayBuffer();
+            })();
+            assetBytesCache.set(url, promise);
         }
 
-        return response.arrayBuffer();
+        try {
+            return await promise;
+        } catch (error) {
+            if (assetBytesCache.get(url) === promise) assetBytesCache.delete(url);
+            throw error;
+        }
     }
 
     function normalizeVisibility(options = {}) {
@@ -515,7 +544,10 @@
     async function createSurface(dependencies, language) {
         const surface = await dependencies.DrawingSurface.create({
             PDFDocument: dependencies.pdfLib.PDFDocument,
-            fontkit: dependencies.fontkit
+            fontkit: dependencies.fontkit,
+            pdfLib: dependencies.pdfLib,
+            language,
+            rgb: dependencies.pdfLib.rgb
         });
 
         const fontEntries = Object.entries(resolveFontPaths({ language }));
@@ -550,7 +582,7 @@
     }
 
 
-    function addMeetMindFooterLinks(surface, layoutResult, pdfLib) {
+    function addMeetMindFooterLinks(surface, layoutResult, pdfLib, language) {
         const PDFName = pdfLib.PDFName;
         const PDFString = pdfLib.PDFString;
         const PDFArray = pdfLib.PDFArray;
@@ -559,6 +591,7 @@
 
         const target = 'https://t.me/meetmind_app_bot';
         const pages = surface.pages || [];
+        const isRtl = ['ar', 'fa'].includes(normalizeLanguage(language));
 
         layoutResult.pages.forEach((layoutPage, index) => {
             const pdfPage = pages[index];
@@ -567,11 +600,14 @@
             const g = footer?.geometry;
             if (!g) return;
 
-            // Clickable zone covers the visible meetmind.ai brand at the far right.
-            // Layout coordinates are top-down; PDF annotation rectangles are bottom-up.
+            // Clickable zone follows the visible LOREVI footer brand. Layout
+            // coordinates are top-down; PDF annotation rectangles are bottom-up.
+            const pageWidth = layoutResult.size?.width || 768;
             const pageHeight = layoutResult.size?.height || 512;
-            const x1 = g.x + g.width - 52;
-            const x2 = g.x + g.width;
+            const x1 = isRtl
+                ? pageWidth - (g.x + g.width)
+                : g.x + g.width - 52;
+            const x2 = x1 + 52;
             const y1 = pageHeight - (g.y + g.height);
             const y2 = pageHeight - g.y;
             const context = surface.pdf.context;
@@ -594,6 +630,9 @@
     }
 
     async function generate(report, options = {}) {
+        const generationStartedAt = nowMilliseconds();
+        const timings = {};
+        const cacheBefore = { ...assetCacheStats };
         const language = options.interface_language || options.interfaceLanguage || options.language || options.locale || report?.interface_language || report?.interfaceLanguage || report?.language || report?.locale || report?.metadata?.interface_language || report?.metadata?.language || report?.user?.interface_language || 'en';
         report = Object.freeze({ ...report, _pdfLanguage: language });
         if (!isPlainObject(report)) {
@@ -606,12 +645,17 @@
             `✅ MeetMind Executive PDF Engine ${ENGINE_VERSION}`
         );
 
+        let phaseStartedAt = nowMilliseconds();
         const dependencies = await loadDependencies();
+        timings.dependencies = elapsedMilliseconds(phaseStartedAt);
 
         // Register Inter BEFORE layout so physical fit is measured with
         // the same real glyph widths that Renderer will draw.
+        phaseStartedAt = nowMilliseconds();
         const surface = await createSurface(dependencies, language);
+        timings.assetPreparation = elapsedMilliseconds(phaseStartedAt);
 
+        phaseStartedAt = nowMilliseconds();
         const rawCompositionResult = dependencies.compose(
             report,
             buildCompositionOptions(options)
@@ -622,7 +666,9 @@
             report,
             options
         );
+        timings.composition = elapsedMilliseconds(phaseStartedAt);
 
+        phaseStartedAt = nowMilliseconds();
         const rawLayoutResult = dependencies.layout(
             compositionResult,
             {
@@ -637,6 +683,7 @@
         const layoutResult = stampResolvedDensity(
             rawLayoutResult
         );
+        timings.layout = elapsedMilliseconds(phaseStartedAt);
 
         if (layoutResult.valid === false) {
             console.warn(
@@ -645,6 +692,7 @@
             );
         }
 
+        phaseStartedAt = nowMilliseconds();
         const renderContext =
             new dependencies.RenderContext(
                 surface,
@@ -667,18 +715,42 @@
             }
         );
 
-        addMeetMindFooterLinks(surface, layoutResult, dependencies.pdfLib);
+        addMeetMindFooterLinks(surface, layoutResult, dependencies.pdfLib, language);
+        timings.render = elapsedMilliseconds(phaseStartedAt);
 
+        phaseStartedAt = nowMilliseconds();
         const pdfBytes = await surface.save();
+        timings.save = elapsedMilliseconds(phaseStartedAt);
+        timings.total = elapsedMilliseconds(generationStartedAt);
 
         const blob = new Blob([pdfBytes], {
             type: 'application/pdf'
+        });
+
+        const diagnostics = Object.freeze({
+            engineVersion: ENGINE_VERSION,
+            timings: Object.freeze({ ...timings }),
+            assetCache: Object.freeze({
+                hits: assetCacheStats.hits - cacheBefore.hits,
+                misses: assetCacheStats.misses - cacheBefore.misses,
+                entries: assetBytesCache.size
+            }),
+            pages: layoutResult.pageCount,
+            density: layoutResult.density,
+            bytes: pdfBytes.length
+        });
+        lastGenerationDiagnostics = diagnostics;
+        Object.defineProperty(blob, 'lorevi', {
+            value: diagnostics,
+            enumerable: true
         });
 
         console.log('✅ MeetMind Golden PDF generated', {
             pages: layoutResult.pageCount,
             density: layoutResult.density,
             bytes: pdfBytes.length,
+            timings: diagnostics.timings,
+            assetCache: diagnostics.assetCache,
             attempts: layoutResult.attempts,
             renderedPages: renderResult.pageCount
         });
@@ -707,6 +779,7 @@
     host.name = ENGINE_NAME;
     host.version = ENGINE_VERSION;
     host.generate = generate;
+    host.getLastGenerationDiagnostics = () => lastGenerationDiagnostics;
 
     global[ENGINE_NAME] = host;
 

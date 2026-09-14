@@ -1,10 +1,12 @@
 /**
- * MeetMind Executive PDF Engine
- * RenderContext — Golden Release 1.0
+ * LOREVI Executive PDF Engine
+ * RenderContext — Golden Release 1.1 RTL adapter.
  *
- * Page-scoped adapter between top-left Layout coordinates and pdf-lib's
- * bottom-left drawing coordinates. Also resolves Inter fonts and HEX colors.
+ * This adapter mirrors page geometry for Arabic/Persian reports and keeps text
+ * in logical Unicode order. DrawingSurface owns bidi resolution and OpenType
+ * glyph shaping so measurement and visible rendering use the same pipeline.
  */
+
 export class RenderContext {
   constructor(drawingSurface, tokens = null, options = {}) {
     this.surface = drawingSurface;
@@ -44,6 +46,10 @@ export class RenderContext {
       return root.rgb(r, g, b);
     }
 
+    function fontName(value) {
+      return typeof value === 'string' && value ? value : 'regular';
+    }
+
     function font(value) {
       if (!value) return root.surface.getFont('regular');
       if (typeof value !== 'string') return value;
@@ -67,10 +73,14 @@ export class RenderContext {
       text(value, options = {}) {
         const sizePt = Number(options.size || 8);
         const topY = Number(options.y || 0);
-        const renderedValue = String(value ?? '');
+        const logicalValue = String(value ?? '');
+        const renderedFontName = fontName(options.font);
         const renderedFont = font(options.font);
-        const textWidth = isRtl ? renderedFont.widthOfTextAtSize(renderedValue, sizePt) : 0;
-        return root.surface.drawText(renderedValue, {
+        const textWidth = isRtl
+          ? root.surface.measureText(logicalValue, renderedFontName, sizePt)
+          : 0;
+
+        return root.surface.drawText(logicalValue, {
           x: mirrorX(options.x, textWidth),
           y: height - topY - sizePt,
           size: sizePt,
@@ -125,8 +135,6 @@ export class RenderContext {
         const topY = Number(options.y || 0);
         return root.surface.drawSvgPath(path, {
           x: mirrorX(options.x, size),
-          // pdf-lib SVG paths use their own local Y axis. Anchor the 24x24
-          // icon viewport at the requested top-left position.
           y: height - topY - size,
           scale,
           color: options.fill ? color(options.fill) : undefined,
@@ -145,8 +153,8 @@ export class RenderContext {
         });
       },
 
-      measureText(text, fontName, sizePt) {
-        return root.surface.measureText(text, fontName, sizePt);
+      measureText(text, name, sizePt) {
+        return root.surface.measureText(text, fontName(name), sizePt);
       },
       getFont(name) { return root.surface.getFont(name); }
     };

@@ -13,6 +13,10 @@ const fatalArchitectureThrow = /throw\s+new\s+Error\s*\([\s\S]{0,160}ARCHITECTUR
 assert(!fatalArchitectureThrow.test(architecture),
   'Architecture renderer must not abort the whole PDF because a dense section needs reflow');
 assert(layout.includes('measureArchitecture'), 'Architecture must remain layout-measured');
+assert(layout.includes('measureArchitectureProcess') && layout.includes('measureArchitectureComponents'),
+  'Architecture measurement does not model process and component geometry separately');
+assert(layout.includes('ACTIVE_BLOCK_MEASURE_CACHE'),
+  'Repeated adaptive layout candidates should reuse deterministic block measurements');
 assert(/asset(Bytes)?Cache/i.test(engine),
   'PDF immutable fonts/images should be cached across exports');
 

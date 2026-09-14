@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 1.9.0 — PDF Hardening v2
+
+### Fixed
+
+- Architecture measurement now mirrors the renderer's section headers, icon gutters, process/component modes, wrapping, and multi-row geometry.
+- Exact full-width natural heights flow into adaptive placement and sparse-page packing.
+- Deterministic text, line-count, and block measurements are cached during each layout pass.
+- Missing task Owner / Due Date values participate in measurement as an em dash.
+- Five-metric layouts measure the incomplete final row at its actual expanded width.
+
 ## 0.3.0 — Layout Engine / Iteration 2
 
 ### Added
@@ -20,4 +30,3 @@
 - No pagination decisions.
 - No drawing operations.
 - No mutation of CompositionResult.
-
