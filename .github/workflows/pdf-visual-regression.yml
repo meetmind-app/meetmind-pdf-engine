@@ -66,6 +66,11 @@ jobs:
             pdftoppm -png -r 144 "$pdf" "Tests/visual-output/renders/$base"
           done
 
+      - name: Record rendered visual hashes
+        run: |
+          set -euo pipefail
+          sha256sum Tests/visual-output/renders/*.png | tee Tests/visual-output/visual-sha256.txt
+
       - name: Verify Persian logical text layer
         run: |
           pdftotext -bbox Tests/visual-output/FA_RTL_001.pdf Tests/visual-output/FA_RTL_001.html
