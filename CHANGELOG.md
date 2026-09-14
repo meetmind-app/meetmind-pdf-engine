@@ -1,5 +1,12 @@
 # Changelog
 
+## Intelligence Engine v1.2 contract
+
+- Require canonical Architecture `mode` at root and section level while retaining `layout` for backward consumers.
+- Default ambiguous, mixed, legacy, and empty roots to non-directional `components`; preserve explicit process sections.
+- Add transcript-instruction isolation, a strict JSON output schema, and a seven-case multilingual/adversarial evaluation corpus.
+- Normalize Architecture in the ready-to-paste Build Report Metadata node without dropping root, section, or item metadata.
+
 ## v1.5.0-pdf-hardening-v2
 
 - Measure Architecture & Process with the same wrapping, icon gutters, process connectors, and row geometry used for rendering.

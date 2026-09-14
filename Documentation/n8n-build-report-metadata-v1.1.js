@@ -26,6 +26,45 @@ function normalizeReportLanguage(value) {
   return supported.includes(base) ? base : 'en';
 }
 
+function normalizeArchitectureMode(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  return ['process', 'flow', 'pipeline', 'sequence', 'workflow'].includes(raw)
+    ? 'process'
+    : 'components';
+}
+
+function normalizeArchitecture(value) {
+  const source = Array.isArray(value)
+    ? { sections: value }
+    : value && typeof value === 'object'
+      ? value
+      : {};
+  const rootSourceMode =
+    source.mode || source.layout || source.kind || source.type || '';
+  const rootMode = normalizeArchitectureMode(rootSourceMode);
+  const sections = (Array.isArray(source.sections) ? source.sections : [])
+    .map(sectionValue => {
+      const section = sectionValue && typeof sectionValue === 'object' && !Array.isArray(sectionValue)
+        ? sectionValue
+        : { title: String(sectionValue || '').trim() };
+      const mode = normalizeArchitectureMode(
+        section.mode ||
+        section.layout ||
+        section.kind ||
+        section.type ||
+        rootSourceMode
+      );
+      return {
+        ...section,
+        mode,
+        layout: mode,
+        items: Array.isArray(section.items) ? section.items : []
+      };
+    });
+
+  return { ...source, mode: rootMode, sections };
+}
+
 const item = $input.first().json;
 const now = new Date().toISOString();
 
@@ -67,7 +106,7 @@ const reportJson = {
   key_metrics: item.key_metrics || [],
   key_takeaways: item.key_takeaways || [],
   decisions: item.decisions || [],
-  architecture: item.architecture || { sections: [] },
+  architecture: normalizeArchitecture(item.architecture),
   risks: item.risks || [],
   dependencies: item.dependencies || [],
   tasks: item.tasks || [],
