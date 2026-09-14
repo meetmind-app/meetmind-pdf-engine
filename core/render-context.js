@@ -4,7 +4,7 @@
  *
  * pdf-lib does not apply Arabic shaping or the Unicode bidi algorithm when
  * drawing strings. For ar/fa we therefore convert Arabic letters to their
- * contextual presentation forms and reorder visual runs before drawText().
+ * contextual presentation forms and reorder visual tokens before drawText().
  */
 
 const ARABIC_FORMS = Object.freeze({
@@ -26,7 +26,6 @@ const ARABIC_FORMS = Object.freeze({
   '\u0645':['\uFEE1','\uFEE2','\uFEE3','\uFEE4'], '\u0646':['\uFEE5','\uFEE6','\uFEE7','\uFEE8'],
   '\u0647':['\uFEE9','\uFEEA','\uFEEB','\uFEEC'], '\u0648':['\uFEED','\uFEEE',null,null],
   '\u0649':['\uFEEF','\uFEF0',null,null], '\u064A':['\uFEF1','\uFEF2','\uFEF3','\uFEF4'],
-  // Persian additions (presentation forms available in Noto Sans Arabic).
   '\u067E':['\uFB56','\uFB57','\uFB58','\uFB59'], '\u0686':['\uFB7A','\uFB7B','\uFB7C','\uFB7D'],
   '\u0698':['\uFB8A','\uFB8B',null,null], '\u06A9':['\uFB8E','\uFB8F','\uFB90','\uFB91'],
   '\u06AF':['\uFB92','\uFB93','\uFB94','\uFB95'], '\u06CC':['\uFBFC','\uFBFD','\uFBFE','\uFBFF']
@@ -36,6 +35,7 @@ const RTL_MARK_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/;
 const ARABIC_CHAR_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 const COMBINING_RE = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/;
 const BREAK_JOIN_RE = /[\u200C\u200D]/;
+const LTR_TOKEN_RE = /^[A-Za-z0-9][A-Za-z0-9._:/+%#@-]*$/;
 
 function previousBase(chars, index) {
   for (let i = index - 1; i >= 0; i -= 1) {
@@ -90,15 +90,20 @@ function reverseArabicRun(value) {
   return units.reverse().join('');
 }
 
+function tokenizeBidi(value) {
+  return String(value ?? '').match(/[A-Za-z0-9][A-Za-z0-9._:/+%#@-]*|[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]+|\s+|[^\sA-Za-z0-9\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]+/g) || [];
+}
+
 function visualRtlText(value) {
   const logical = String(value ?? '');
   if (!RTL_MARK_RE.test(logical)) return logical;
   const shaped = shapeArabic(logical);
-  // Keep Latin/API/numeric tokens internally LTR, but reverse their position
-  // among RTL runs. This covers mixed Persian/Arabic business text such as
-  // "ارسال به API" and "Google Calendar" without reversing API/Google.
-  const runs = shaped.match(/[A-Za-z0-9][A-Za-z0-9._:/+%#@-]*(?:\s+[A-Za-z0-9][A-Za-z0-9._:/+%#@-]*)*|[^A-Za-z0-9]+/g) || [shaped];
-  return runs.reverse().map(run => ARABIC_CHAR_RE.test(run) ? reverseArabicRun(run) : run).join('');
+  const tokens = tokenizeBidi(shaped);
+  return tokens.reverse().map(token => {
+    if (LTR_TOKEN_RE.test(token)) return token;
+    if (ARABIC_CHAR_RE.test(token)) return reverseArabicRun(token);
+    return token;
+  }).join('');
 }
 
 export class RenderContext {
