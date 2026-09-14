@@ -1,11 +1,18 @@
+import bidiFactory from 'https://cdn.jsdelivr.net/npm/bidi-js@1.1.0/+esm';
+
 /**
  * LOREVI Executive PDF Engine
- * RenderContext — RTL-safe PDF text hotfix
+ * RenderContext — RTL-safe PDF text pipeline.
  *
- * pdf-lib does not apply Arabic shaping or the Unicode bidi algorithm when
- * drawing strings. For ar/fa we therefore convert Arabic letters to their
- * contextual presentation forms and reorder visual tokens before drawText().
+ * pdf-lib draws glyphs in the order it receives them. For Arabic/Persian we
+ * therefore do two explicit passes before drawText():
+ *   1) contextual Arabic/Persian shaping;
+ *   2) Unicode Bidirectional Algorithm (UAX #9) via bidi-js.
+ *
+ * bidi-js is pinned to 1.1.0. LTR languages never enter this pipeline.
  */
+
+const bidi = bidiFactory();
 
 const ARABIC_FORMS = Object.freeze({
   '\u0621':['\uFE80','\uFE80',null,null], '\u0622':['\uFE81','\uFE82',null,null],
@@ -32,10 +39,8 @@ const ARABIC_FORMS = Object.freeze({
 });
 
 const RTL_MARK_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/;
-const ARABIC_CHAR_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 const COMBINING_RE = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/;
 const BREAK_JOIN_RE = /[\u200C\u200D]/;
-const LTR_TOKEN_RE = /^[A-Za-z0-9][A-Za-z0-9._:/+%#@-]*$/;
 
 function previousBase(chars, index) {
   for (let i = index - 1; i >= 0; i -= 1) {
@@ -81,29 +86,15 @@ function shapeArabic(text) {
   }).join('');
 }
 
-function reverseArabicRun(value) {
-  const units = [];
-  for (const char of Array.from(value)) {
-    if (COMBINING_RE.test(char) && units.length) units[units.length - 1] += char;
-    else units.push(char);
-  }
-  return units.reverse().join('');
-}
-
-function tokenizeBidi(value) {
-  return String(value ?? '').match(/[A-Za-z0-9][A-Za-z0-9._:/+%#@-]*|[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]+|\s+|[^\sA-Za-z0-9\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]+/g) || [];
-}
-
 function visualRtlText(value) {
   const logical = String(value ?? '');
   if (!RTL_MARK_RE.test(logical)) return logical;
+
+  // Shape first in logical order, then let the Unicode BiDi algorithm resolve
+  // mixed Persian/Arabic + Latin/API + numbers + punctuation correctly.
   const shaped = shapeArabic(logical);
-  const tokens = tokenizeBidi(shaped);
-  return tokens.reverse().map(token => {
-    if (LTR_TOKEN_RE.test(token)) return token;
-    if (ARABIC_CHAR_RE.test(token)) return reverseArabicRun(token);
-    return token;
-  }).join('');
+  const levels = bidi.getEmbeddingLevels(shaped, 'rtl');
+  return bidi.getReorderedString(shaped, levels);
 }
 
 export class RenderContext {
