@@ -33,60 +33,9 @@
         return I18N[base]?base:'en';
     }
     function title(ctx,key){return I18N[lang(ctx)][key]||I18N.en[key]||key;}
-    const SECTION_ICONS = Object.freeze({
-        summary:'sparkles', metrics:'chart-column', insights:'lightbulb',
-        decisions:'circle-check', risks:'triangle-alert', tasks:'clipboard-list',
-        architecture:'settings', owners:'users'
-    });
-    const STAT_ICONS = Object.freeze({Participants:'users',Tasks:'clipboard-list',Decisions:'circle-check',Risks:'triangle-alert'});
-    const METRIC_ICONS = Object.freeze(['target','file-text','box','users-round','network','triangle-alert','calendar-days','layers']);
-
-    // 6D: normalize every Lucide node through the SAME SVG-path pipeline.
-    // Mixing ctx.circle/ctx.line (page-space Y inversion) with drawSvgPath
-    // (SVG local coordinates) caused compound icons to split and drift vertically.
-    function nodePath(tag,a){
-        const n=v=>Number(v||0);
-        if(tag==='path') return String(a.d||'');
-        if(tag==='line') return `M ${n(a.x1)} ${n(a.y1)} L ${n(a.x2)} ${n(a.y2)}`;
-        if(tag==='polyline'){
-            const pts=String(a.points||'').trim().split(/\s+/).map(q=>q.split(',').map(Number)).filter(p=>p.length===2&&p.every(Number.isFinite));
-            if(!pts.length)return '';
-            return `M ${pts[0][0]} ${pts[0][1]} `+pts.slice(1).map(p=>`L ${p[0]} ${p[1]}`).join(' ');
-        }
-        if(tag==='rect'){
-            const x=n(a.x), y=n(a.y), w=n(a.width), h=n(a.height);
-            // Rounded corners are intentionally omitted at icon scale; geometry stays canonical.
-            return `M ${x} ${y} H ${x+w} V ${y+h} H ${x} Z`;
-        }
-        if(tag==='circle'){
-            const cx=n(a.cx), cy=n(a.cy), r=n(a.r);
-            // Two arcs expressed as cubic Beziers; keeps circles in the same local 24x24 viewport.
-            const k=0.5522847498307936, c=r*k;
-            return `M ${cx+r} ${cy} C ${cx+r} ${cy+c} ${cx+c} ${cy+r} ${cx} ${cy+r} C ${cx-c} ${cy+r} ${cx-r} ${cy+c} ${cx-r} ${cy} C ${cx-r} ${cy-c} ${cx-c} ${cy-r} ${cx} ${cy-r} C ${cx+c} ${cy-r} ${cx+r} ${cy-c} ${cx+r} ${cy} Z`;
-        }
-        if(tag==='ellipse'){
-            const cx=n(a.cx), cy=n(a.cy), rx=n(a.rx), ry=n(a.ry), k=0.5522847498307936;
-            return `M ${cx+rx} ${cy} C ${cx+rx} ${cy+ry*k} ${cx+rx*k} ${cy+ry} ${cx} ${cy+ry} C ${cx-rx*k} ${cy+ry} ${cx-rx} ${cy+ry*k} ${cx-rx} ${cy} C ${cx-rx} ${cy-ry*k} ${cx-rx*k} ${cy-ry} ${cx} ${cy-ry} C ${cx+rx*k} ${cy-ry} ${cx+rx} ${cy-ry*k} ${cx+rx} ${cy} Z`;
-        }
-        return '';
-    }
-
     function icon(ctx,name,x,y,size,color){
         const registry=global.ExecutiveSlideEngine?.icons;
-        const def=registry?.get?.(name);
-        if(!def||typeof ctx.svgPath!=='function')return false;
-
-        // 6E: normalize Lucide's 24x24 viewport to the visual top-left anchor.
-        // pdf-lib's SVG path origin behaves differently from text/rect top-left
-        // coordinates, so the visual glyph needs one viewport-height correction.
-        const drawY = y - size * 1.08;
-        const stroke=Math.max(.48,Math.min(.72,size*.055));
-
-        def.nodes.forEach(([tag,a])=>{
-            const d=nodePath(tag,a||{});
-            if(d)ctx.svgPath(d,{x,y:drawY,size,stroke:color,borderWidth:stroke});
-        });
-        return true;
+        return registry?.draw?.(ctx,name,{x,y,size,color})||false;
     }
 
 
@@ -152,12 +101,12 @@
     function card(ctx,g){
         ctx.rect({x:g.x,y:g.y,width:g.width,height:g.height,fill:'cardBg',stroke:'borderDefault',borderWidth:.5,radius:4});
     }
-    function sectionHeader(ctx,g,title,color='purplePrimary'){
+    function sectionHeader(ctx,g,key,displayTitle,color='purplePrimary'){
         const sp=spacing(ctx), s=style(ctx,'blockTitle',{font:'bold',size:8.2,lineHeight:9.8,color:'textPrimary'});
-        const key=Object.keys(SECTION_ICONS).find(k=>Object.values(I18N).some(dict=>dict[k]===title));
+        const semantic=global.ExecutiveSlideEngine?.semanticIcons;
         const size=9.2;
-        icon(ctx,SECTION_ICONS[key]||'sparkles',g.x+sp.padX,g.y+sp.padY+1.2,size,color);
-        ctx.text(title,{x:g.x+sp.padX+13.2,y:g.y+sp.padY,size:s.size,font:s.font,color});
+        icon(ctx,semantic?.section?.(key)||'file-text',g.x+sp.padX,g.y+sp.padY+1.2,size,color);
+        ctx.text(displayTitle,{x:g.x+sp.padX+13.2,y:g.y+sp.padY,size:s.size,font:s.font,color});
         return g.y+sp.padY+s.lineHeight+sp.titleGap;
     }
     function blockData(block){
@@ -301,7 +250,7 @@
             const c=colors[i]||'purplePrimary';
             // 6H.1: stats icons share the text row baseline; do not apply a second local drop.
             const statLabel=title(ctx,e.key);
-            const statIcon={participants:'users',tasks:'clipboard-list',decisions:'circle-check',risks:'triangle-alert'}[e.key]||'circle-check';
+            const statIcon=global.ExecutiveSlideEngine?.semanticIcons?.stat?.(e.key)||'circle-question-mark';
             icon(ctx,statIcon,x,g.y+5.2,9,c);
             ctx.text(statLabel,{x:x+13,y:g.y+5.2,size:label.size,font:label.font,color:label.color});
             const lw=measure(ctx,statLabel,label);
@@ -335,7 +284,7 @@
     }
     function renderSummary(block,ctx){
         const g=block.geometry; card(ctx,g);
-        let y=sectionHeader(ctx,g,title(ctx,'summary'),'purplePrimary');
+        let y=sectionHeader(ctx,g,'summary',title(ctx,'summary'),'purplePrimary');
         const sp=spacing(ctx), s=style(ctx,'body',{font:'regular',size:6.3,lineHeight:7.8,color:'textPrimary'});
         const paragraphs=summaryParagraphs(block,ctx.report||{});
         const paragraphGap=Number(sp.paragraphGap??3.2);
@@ -360,7 +309,7 @@
     }
     function renderMetrics(block,ctx){
         const g=block.geometry; card(ctx,g);
-        const sp=spacing(ctx); let y=sectionHeader(ctx,g,title(ctx,'metrics'),'purplePrimary');
+        const sp=spacing(ctx); let y=sectionHeader(ctx,g,'metrics',title(ctx,'metrics'),'purplePrimary');
         const metrics=metricsFrom(block,ctx.report||{});
         const cols=4, rows=Math.max(1,Math.ceil(metrics.length/cols));
         const gap=3;
@@ -383,14 +332,10 @@
             const iconSize=Math.min(8.5,Math.max(7.0,cellH*.18));
             const headerY=cy+4.5;
             const iconX=x+5;
-            icon(
-                ctx,
-                METRIC_ICONS[i%METRIC_ICONS.length],
-                iconX,
-                headerY+.2,
-                iconSize,
-                i===5?'orangeRisk':i===4?'greenSuccess':'purplePrimary'
-            );
+            const semantic=global.ExecutiveSlideEngine?.semanticIcons?.resolveMetric?.(m)||{
+                name:'file-text',color:'purplePrimary'
+            };
+            icon(ctx,semantic.name,iconX,headerY+.2,iconSize,semantic.color);
             // Icon is left-anchored, but the label remains optically centered in the card.
             // This matches the approved reference while keeping the compact horizontal header.
             textLines(ctx,label,x+18,headerY,cellW-36,ls,'center');
@@ -411,7 +356,7 @@
     }
     function renderList(block,ctx,key,title,color){
         const g=block.geometry; card(ctx,g);
-        const sp=spacing(ctx); let y=sectionHeader(ctx,g,title,color);
+        const sp=spacing(ctx); let y=sectionHeader(ctx,g,key,title,color);
         const strong=style(ctx,'listStrong',{font:'semibold',size:6.1,lineHeight:7.4,color:'textPrimary'});
         const body=style(ctx,'listBody',{font:'regular',size:6.1,lineHeight:7.4,color:'textPrimary'});
         const badge=style(ctx,'badgeNumber',{font:'bold',size:5,lineHeight:5.4,color:'white'});
@@ -435,7 +380,7 @@
     function tasksFrom(block,report){const b=arrayData(block);return b.length?b:reportArray(report,'tasks');}
     function renderTasks(block,ctx){
         const g=block.geometry; card(ctx,g);
-        const sp=spacing(ctx); let y=sectionHeader(ctx,g,title(ctx,'tasks'),'purplePrimary');
+        const sp=spacing(ctx); let y=sectionHeader(ctx,g,'tasks',title(ctx,'tasks'),'purplePrimary');
         const tasks=tasksFrom(block,ctx.report||{});
         const taskScale=Math.max(1,Math.min(1.55,Number(block?.layout?.contentScale)||1));
         const hsBase=style(ctx,'taskHeader',{font:'semibold',size:4.8,lineHeight:5.6,color:'textSecondary'});
@@ -494,12 +439,11 @@
     }
     function renderArchitecture(block,ctx){
         const g=block.geometry; card(ctx,g);
-        const sp=spacing(ctx); let y=sectionHeader(ctx,g,title(ctx,'architecture'),'purplePrimary');
+        const sp=spacing(ctx); let y=sectionHeader(ctx,g,'architecture',title(ctx,'architecture'),'purplePrimary');
         const sections=architectureFrom(block,ctx.report||{});
         const cols=Math.min(4,Math.max(1,sections.length)), gap=sp.cardGap;
         const innerX=g.x+sp.padX, innerW=g.width-sp.padX*2, colW=(innerW-gap*(cols-1))/cols;
         const accents=['purplePrimary','greenSuccess','orangeRisk','purplePrimary'];
-        const iconNames=['file-text','brain-circuit','database','settings'];
         sections.forEach((sec,i)=>{
             const x=innerX+i*(colW+gap), bottom=g.y+g.height-sp.padY;
             ctx.rect({x,y,width:colW,height:bottom-y,fill:'cardBg',stroke:'borderDefault',borderWidth:.5,radius:3});
@@ -557,7 +501,8 @@
                 : 0;
 
             items.forEach((item,j)=>{
-                icon(ctx,iconNames[(i+j)%iconNames.length],x+5,sy,6.5*scale,accents[i]);
+                const iconName=global.ExecutiveSlideEngine?.semanticIcons?.architectureItem?.(item)||'file-text';
+                icon(ctx,iconName,x+5,sy,6.5*scale,accents[i]);
                 const t=clean(item?.title||item?.name||item?.label), d=clean(item?.description||item?.text||'');
                 sy+=textLines(ctx,t,x+13,sy,colW-18,itemTitle);
                 if(d)sy+=textLines(ctx,d,x+13,sy,colW-18,desc);
@@ -590,7 +535,8 @@
         const titleStyle=style(ctx,'blockTitle',{font:'bold',size:8.2,lineHeight:9.8,color:'textPrimary'});
         const titleY=g.y+Math.max(5,(g.height-titleStyle.lineHeight)/2);
 
-        icon(ctx,'users',g.x+sp.padX,titleY+3.2,9.2,'purplePrimary');
+        const ownerIcon=global.ExecutiveSlideEngine?.semanticIcons?.section?.('owners')||'users';
+        icon(ctx,ownerIcon,g.x+sp.padX,titleY+3.2,9.2,'purplePrimary');
         ctx.text(title(ctx,'owners'),{
             x:g.x+sp.padX+13.2,
             y:titleY,
@@ -632,7 +578,7 @@
 
 
     host.blockRenderers=Object.freeze({
-        version:'1.6.5-p0-content-integrity',
+        version:'1.7.0-design-icon-system-v2',
         header:renderHeader,
         stats:renderStats,
         meetingStats:renderStats,

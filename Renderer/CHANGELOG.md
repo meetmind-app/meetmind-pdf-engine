@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 1.2.0 — Design / Icon System v2
+
+### Added
+
+- One versioned icon drawing API for every PDF renderer.
+- Complete Lucide node conversion, including ellipse geometry.
+- Deterministic semantic resolvers for sections, statistics, metrics, meeting types and Architecture items.
+- Metric-language coverage for all ten supported report locales.
+
+### Changed
+
+- Removed positional metric icon rotation and localized-title reverse lookup.
+- Architecture now uses the canonical network heading icon and type-driven item icons.
+- Baseline correction and stroke scaling are shared design tokens.
+
 ## 1.1.0 — PDF Hardening v2
 
 ### Fixed
