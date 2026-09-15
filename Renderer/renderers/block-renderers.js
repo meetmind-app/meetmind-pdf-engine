@@ -98,6 +98,100 @@
         });
         return lines.length*s.lineHeight;
     }
+    function styledWords(ctx,segments,regular,strong){
+        const words=[];
+        let current=[];
+        (Array.isArray(segments)?segments:[]).forEach(segment=>{
+            const segmentStyle=segment?.strong?strong:regular;
+            String(segment?.text??'').split(/(\s+)/).forEach(part=>{
+                if(!part)return;
+                if(/^\s+$/.test(part)){
+                    if(current.length){words.push(current);current=[];}
+                    return;
+                }
+                current.push({text:part,style:segmentStyle});
+            });
+        });
+        if(current.length)words.push(current);
+        return words;
+    }
+    function styledTextLines(ctx,segments,x,y,width,regular,strong){
+        // `measure()` normalizes/trim text, so it intentionally reports zero
+        // for a standalone space. Inline wrapping needs the physical advance.
+        const spaceW=ctx.measureText(' ',regular.font,regular.size);
+        const rawWords=styledWords(ctx,segments,regular,strong);
+        const partWidth=part=>/^\s+$/.test(part.text)
+            ? ctx.measureText(part.text,part.style.font,part.style.size)
+            : measure(ctx,part.text,part.style);
+        const wordWidth=parts=>parts.reduce((sum,part)=>sum+partWidth(part),0);
+        const isLtrWord=parts=>{
+            const value=parts.map(part=>part.text).join('');
+            return /[A-Za-z]/.test(value)&&!/[\u0600-\u06ff]/.test(value);
+        };
+        const words=[];
+        rawWords.forEach(parts=>{
+            const previous=words[words.length-1];
+            if(previous&&isLtrWord(previous)&&isLtrWord(parts)&&wordWidth(previous)+spaceW+wordWidth(parts)<=width){
+                previous.push({text:' ',style:regular},...parts);
+            }else words.push(parts.slice());
+        });
+        const lines=[];
+        let line=[],lineW=0;
+        words.forEach(parts=>{
+            const wordW=wordWidth(parts);
+            const separator=line.length?spaceW:0;
+            if(line.length&&lineW+separator+wordW>width){lines.push(line);line=[];lineW=0;}
+            line.push(parts);
+            lineW+=(line.length>1?spaceW:0)+wordW;
+        });
+        if(line.length)lines.push(line);
+        lines.forEach((lineWords,lineIndex)=>{
+            const lineParts=[];
+            lineWords.forEach((parts,wordIndex)=>{
+                if(wordIndex)lineParts.push({text:' ',style:regular});
+                parts.forEach(part=>lineParts.push(part));
+            });
+            const firstStyle=lineParts[0]?.style;
+            const uniform=lineParts.length>0&&lineParts.every(part=>
+                part.style.font===firstStyle.font&&
+                part.style.size===firstStyle.size&&
+                part.style.color===firstStyle.color
+            );
+            const rtlParagraph=['ar','fa'].includes(lang(ctx));
+            if(uniform||rtlParagraph){
+                // Keep unstyled lines as one logical text operation. Besides
+                // producing a useful searchable text layer, this lets the
+                // bidi/OpenType pipeline lay out the complete RTL sentence.
+                // Mixed font runs cannot be independently positioned in an
+                // RTL paragraph without re-running UAX #9 across the full
+                // line, so RTL deliberately keeps one regular-weight run.
+                const lineStyle=rtlParagraph?regular:firstStyle;
+                ctx.text(lineParts.map(part=>part.text).join(''),{
+                    x,y:y+lineIndex*regular.lineHeight,size:lineStyle.size,font:lineStyle.font,color:lineStyle.color
+                });
+                return;
+            }
+            const runs=[];
+            lineParts.forEach(part=>{
+                const previous=runs[runs.length-1];
+                if(previous&&previous.style.font===part.style.font&&previous.style.size===part.style.size&&previous.style.color===part.style.color){
+                    previous.text+=part.text;
+                }else runs.push({text:part.text,style:part.style});
+            });
+            let tx=x;
+            runs.forEach(run=>{
+                const leading=(run.text.match(/^\s+/)?.[0]||'').length;
+                const trailing=(run.text.match(/\s+$/)?.[0]||'').length;
+                const visible=run.text.trim();
+                if(!visible){tx+=run.text.length*spaceW;return;}
+                tx+=leading*spaceW;
+                ctx.text(visible,{x:tx,y:y+lineIndex*regular.lineHeight,size:run.style.size,font:run.style.font,color:run.style.color});
+                tx+=ctx.measureText(visible,run.style.font,run.style.size);
+                tx+=trailing*spaceW;
+            });
+        });
+        return lines.length*regular.lineHeight;
+    }
     function card(ctx,g){
         ctx.rect({x:g.x,y:g.y,width:g.width,height:g.height,fill:'cardBg',stroke:'borderDefault',borderWidth:.5,radius:4});
     }
@@ -369,7 +463,11 @@
             ctx.text(n,{x:bx-nw/2,y:y+1.2,size:badge.size,font:badge.font,color:'white'});
             const tx=g.x+sp.padX+13, tw=g.width-sp.padX*2-13;
             y+=textLines(ctx,item.title,tx,y,tw,strong);
-            if(item.description)y+=textLines(ctx,item.description,tx,y,tw,body);
+            const segments=raw&&typeof raw==='object'&&!Array.isArray(raw)
+                ? raw._loreviDescriptionSegments
+                : null;
+            if(Array.isArray(segments)&&segments.length)y+=styledTextLines(ctx,segments,tx,y,tw,body,strong);
+            else if(item.description)y+=textLines(ctx,item.description,tx,y,tw,body);
             y+=sp.bulletGap;
         });
     }
@@ -578,7 +676,7 @@
 
 
     host.blockRenderers=Object.freeze({
-        version:'1.7.0-design-icon-system-v2',
+        version:'1.8.0-pdf-design-polish-v2',
         header:renderHeader,
         stats:renderStats,
         meetingStats:renderStats,

@@ -205,8 +205,6 @@
         const strongSize = mode === MODES.regular ? 6.6 : mode === MODES.compact ? 6.3 : 6.1;
         const bodySize = strongSize;
         const lineHeight = mode === MODES.regular ? 9.0 : mode === MODES.compact ? 8.1 : 7.4;
-        const supplementalSize = Math.max(5.2, bodySize * 0.86);
-        const supplementalLine = Math.max(6.2, mode.smallLine * 0.9);
         const bulletGap = mode === MODES.regular ? 4 : mode === MODES.compact ? 3.3 : 2.7;
         const titleContentGap = mode === MODES.regular ? 6 : mode === MODES.compact ? 5 : 4;
         let h = mode.padY + mode.blockTitleLine + titleContentGap;
@@ -216,15 +214,15 @@
             const title = cleanText(item?.title || item?.label || '');
             const body = cleanText(item?.description || item?.details || item?.text || item?.value || (title ? '' : textOf(item)));
             const supplemental = isRiskBlock ? riskSupplementalText(item) : '';
+            const combinedBody = [body, supplemental].filter(Boolean).join(' ');
             const titleLines = title ? lineCount(title, inner, strongSize, 'semibold') : 0;
-            const bodyLines = body && body !== title ? lineCount(body, inner, bodySize, 'regular') : 0;
-            const supplementalLines = supplemental ? lineCount(supplemental, inner, supplementalSize, 'regular') : 0;
+            const bodyLines = combinedBody && combinedBody !== title
+                ? lineCount(combinedBody, inner, bodySize, 'regular')
+                : 0;
             h += Math.max(
                 lineHeight,
                 titleLines * lineHeight
                     + bodyLines * lineHeight
-                    + supplementalLines * supplementalLine
-                    + (supplementalLines ? 1.5 : 0)
             );
             h += bulletGap;
         }

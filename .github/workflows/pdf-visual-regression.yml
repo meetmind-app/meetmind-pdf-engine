@@ -99,6 +99,7 @@ jobs:
           grep -Fq 'ENOMEGA' Tests/visual-output/EN_ARCH_DENSE_V2.html
 
       - name: Upload visual regression artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pdf-visual-regression
