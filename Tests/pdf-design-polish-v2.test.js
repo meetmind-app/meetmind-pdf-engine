@@ -80,6 +80,8 @@ assert.strictEqual(mitigation?.font, 'semibold', 'Risk mitigation label must be 
 assert.strictEqual(impactBody?.font, 'regular', 'Risk body must remain regular.');
 assert.strictEqual(impact?.y, impactBody?.y, 'Impact label must continue inline without a forced line break.');
 assert.ok(calls.some(call => call.type === 'text' && call.value.includes('Google Calendar')), 'Mixed-style risk rendering must preserve searchable phrases.');
+const descriptionRun = calls.find(call => call.type === 'text' && call.value.includes('изменить тарифы.'));
+assert.ok(descriptionRun?.value.endsWith(' '), 'Risk description and structured labels must retain an inline separator.');
 
 calls.length = 0;
 report.language = 'fa';

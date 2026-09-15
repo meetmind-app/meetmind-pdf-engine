@@ -423,16 +423,16 @@
             const segments = [];
             if (description) segments.push({ text: description, strong: false });
             if (impact) {
-                segments.push({ text: `${labels.impact}:`, strong: true });
-                segments.push({ text: impact, strong: false });
+                segments.push({ text: `${segments.length ? ' ' : ''}${labels.impact}:`, strong: true });
+                segments.push({ text: ` ${impact}`, strong: false });
             }
             if (mitigation) {
-                segments.push({ text: `${labels.mitigation}:`, strong: true });
-                segments.push({ text: mitigation, strong: false });
+                segments.push({ text: `${segments.length ? ' ' : ''}${labels.mitigation}:`, strong: true });
+                segments.push({ text: ` ${mitigation}`, strong: false });
             }
             return {
                 ...raw,
-                description: segments.map(segment => segment.text).join(' '),
+                description: cleanText(segments.map(segment => segment.text).join('')),
                 _loreviDescriptionSegments: segments
             };
         });
