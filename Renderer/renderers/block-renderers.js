@@ -165,10 +165,14 @@
             });
             let tx=x;
             runs.forEach(run=>{
-                ctx.text(run.text,{x:tx,y:y+lineIndex*regular.lineHeight,size:run.style.size,font:run.style.font,color:run.style.color});
-                // Preserve trailing separator advance between differently
-                // styled runs; the generic measure() trims whitespace.
-                tx+=ctx.measureText(run.text,run.style.font,run.style.size);
+                const leading=(run.text.match(/^\s+/)?.[0]||'').length;
+                const trailing=(run.text.match(/\s+$/)?.[0]||'').length;
+                const visible=run.text.trim();
+                if(!visible){tx+=run.text.length*spaceW;return;}
+                tx+=leading*spaceW;
+                ctx.text(visible,{x:tx,y:y+lineIndex*regular.lineHeight,size:run.style.size,font:run.style.font,color:run.style.color});
+                tx+=ctx.measureText(visible,run.style.font,run.style.size);
+                tx+=trailing*spaceW;
             });
         });
         return lines.length*regular.lineHeight;
