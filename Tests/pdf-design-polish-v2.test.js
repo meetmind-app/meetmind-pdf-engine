@@ -27,7 +27,7 @@ const report = {
   ],
   risks: [{
     title: 'Рост стоимости',
-    description: 'Поставщики могут изменить тарифы.',
+    description: 'Поставщики Google Calendar могут изменить тарифы.',
     impact: 'Маржа снизится.',
     mitigation: 'Сравнить альтернативы.'
   }]
@@ -73,11 +73,12 @@ assert.ok(numericRuns.some(call => call.value === '18' && call.font === 'bold'),
 assert.ok(calls.some(call => call.type === 'text' && call.value.includes('₽/SKU') && call.font === 'regular'), 'Metric units must remain regular.');
 
 const impact = calls.find(call => call.type === 'text' && call.value === 'Влияние:');
-const impactBody = calls.find(call => call.type === 'text' && call.value === 'Маржа');
+const impactBody = calls.find(call => call.type === 'text' && call.value.includes('Маржа'));
 const mitigation = calls.find(call => call.type === 'text' && call.value === 'Меры:');
 assert.strictEqual(impact?.font, 'semibold', 'Risk impact label must be emphasized structurally.');
 assert.strictEqual(mitigation?.font, 'semibold', 'Risk mitigation label must be emphasized structurally.');
 assert.strictEqual(impactBody?.font, 'regular', 'Risk body must remain regular.');
 assert.strictEqual(impact?.y, impactBody?.y, 'Impact label must continue inline without a forced line break.');
+assert.ok(calls.some(call => call.type === 'text' && call.value.includes('Google Calendar')), 'Mixed-style risk rendering must preserve searchable phrases.');
 
 console.log('PDF Design Polish v2 contract passed.');

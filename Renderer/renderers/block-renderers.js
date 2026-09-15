@@ -129,13 +129,37 @@
         });
         if(line.length)lines.push(line);
         lines.forEach((lineWords,lineIndex)=>{
-            let tx=x;
+            const lineParts=[];
             lineWords.forEach((parts,wordIndex)=>{
-                if(wordIndex)tx+=spaceW;
-                parts.forEach(part=>{
-                    ctx.text(part.text,{x:tx,y:y+lineIndex*regular.lineHeight,size:part.style.size,font:part.style.font,color:part.style.color});
-                    tx+=measure(ctx,part.text,part.style);
+                if(wordIndex)lineParts.push({text:' ',style:regular});
+                parts.forEach(part=>lineParts.push(part));
+            });
+            const firstStyle=lineParts[0]?.style;
+            const uniform=lineParts.length>0&&lineParts.every(part=>
+                part.style.font===firstStyle.font&&
+                part.style.size===firstStyle.size&&
+                part.style.color===firstStyle.color
+            );
+            if(uniform){
+                // Keep unstyled lines as one logical text operation. Besides
+                // producing a useful searchable text layer, this lets the
+                // bidi/OpenType pipeline lay out the complete RTL sentence.
+                ctx.text(lineParts.map(part=>part.text).join(''),{
+                    x,y:y+lineIndex*regular.lineHeight,size:firstStyle.size,font:firstStyle.font,color:firstStyle.color
                 });
+                return;
+            }
+            const runs=[];
+            lineParts.forEach(part=>{
+                const previous=runs[runs.length-1];
+                if(previous&&previous.style.font===part.style.font&&previous.style.size===part.style.size&&previous.style.color===part.style.color){
+                    previous.text+=part.text;
+                }else runs.push({text:part.text,style:part.style});
+            });
+            let tx=x;
+            runs.forEach(run=>{
+                ctx.text(run.text,{x:tx,y:y+lineIndex*regular.lineHeight,size:run.style.size,font:run.style.font,color:run.style.color});
+                tx+=measure(ctx,run.text,run.style);
             });
         });
         return lines.length*regular.lineHeight;
