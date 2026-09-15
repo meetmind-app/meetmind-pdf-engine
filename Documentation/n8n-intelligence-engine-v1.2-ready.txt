@@ -14,7 +14,7 @@ EVIDENCE DISCIPLINE — MANDATORY
 - Use only facts supported by the transcript.
 - Never invent decisions, owners, due dates, metrics, risks, impact, mitigation, dependencies, responsibilities or architecture relationships.
 - Preserve material numbers and their meaning. You may normalize presentation, but MUST NOT change numeric magnitude, currency, unit, direction or timeframe.
-- If evidence for an optional field is absent, return an empty string, empty array, or omit the optional subfield where the schema allows it.
+- Every schema field is required by strict structured output. If semantic evidence for a nullable-by-meaning field is absent, return an empty string or empty array; never omit the field.
 - If a risk is evidenced but impact or mitigation is not, keep the risk and leave unsupported impact/mitigation empty.
 - If a task has no explicit owner or due date, return an empty string for that field. Do not guess.
 - Do not generate system-derived duration, participant count, task count, decision count, billing or processing statistics.
@@ -64,7 +64,7 @@ Each metric MUST contain:
   "label": "",
   "value": ""
 }
-Optional fields when supported:
+Always include these fields; populate them only when supported:
 {
   "context": "",
   "relation": "current|target|current_to_target|previous_to_current|range|change|other",
@@ -124,7 +124,10 @@ Each item:
 }
 Rules:
 - architecture.mode is required and must be exactly "process" or "components".
-- Use architecture.mode="process" only when the architecture as a whole is one coherent evidenced sequence. Use architecture.mode="components" as the conservative default for mixed, grouped, independent, ambiguous or empty architecture.
+- Use architecture.mode="process" only when the entire architecture is one coherent evidenced end-to-end sequence.
+- HARD ROOT INVARIANT: if any non-empty section has mode="components", architecture.mode MUST be "components". A mixed report with process and component sections always has architecture.mode="components".
+- Multiple independent process groups also require architecture.mode="components"; root "process" is reserved for one unified chain, not the first or most prominent section.
+- Use architecture.mode="components" as the conservative default for mixed, grouped, independent, ambiguous or empty architecture.
 - Every section requires mode and layout. They must be identical canonical values.
 - mode/layout="process" ONLY for a true evidenced sequence, handoff, pipeline, workflow or dependency chain where order/direction matters.
 - mode/layout="components" for independent systems, capabilities, entities, workstreams or grouped elements where arrows would imply a false sequence.
@@ -220,6 +223,7 @@ Before returning, silently validate that:
 - enum values exactly match the allowed lowercase tokens;
 - arrays contain no null or empty placeholder items;
 - architecture root and every architecture section have a canonical mode;
+- if any section mode is components, architecture.mode is components;
 - every section layout equals its mode;
 - no unsupported owner, due date, decision, metric relationship, risk impact, mitigation, dependency or process direction was inferred.
 
