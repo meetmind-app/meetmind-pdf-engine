@@ -73,17 +73,17 @@ jobs:
 
       - name: Verify Persian logical text layer
         run: |
-          pdftotext -bbox Tests/visual-output/FA_RTL_001.pdf Tests/visual-output/FA_RTL_001.html
-          grep -Fq 'پنل مدیریت جذب و رزومه' Tests/visual-output/FA_RTL_001.html
-          grep -Fq 'API' Tests/visual-output/FA_RTL_001.html
-          grep -Fq 'Google' Tests/visual-output/FA_RTL_001.html
+          pdftotext Tests/visual-output/FA_RTL_001.pdf Tests/visual-output/FA_RTL_001.txt
+          grep -Fq 'پنل مدیریت جذب و رزومه' Tests/visual-output/FA_RTL_001.txt
+          grep -Fq 'API' Tests/visual-output/FA_RTL_001.txt
+          grep -Fq 'Google' Tests/visual-output/FA_RTL_001.txt
 
       - name: Verify Arabic logical text layer
         run: |
-          pdftotext -bbox Tests/visual-output/AR_RTL_001.pdf Tests/visual-output/AR_RTL_001.html
-          grep -Fq 'مراجعة خطة إطلاق المنتج' Tests/visual-output/AR_RTL_001.html
-          grep -Fq 'API' Tests/visual-output/AR_RTL_001.html
-          grep -Fq 'Google Calendar' Tests/visual-output/AR_RTL_001.html
+          pdftotext Tests/visual-output/AR_RTL_001.pdf Tests/visual-output/AR_RTL_001.txt
+          grep -Fq 'مراجعة خطة إطلاق المنتج' Tests/visual-output/AR_RTL_001.txt
+          grep -Fq 'API' Tests/visual-output/AR_RTL_001.txt
+          grep -Fq 'Google Calendar' Tests/visual-output/AR_RTL_001.txt
 
       - name: Verify dense Architecture v2 integrity
         run: |
@@ -99,6 +99,7 @@ jobs:
           grep -Fq 'ENOMEGA' Tests/visual-output/EN_ARCH_DENSE_V2.html
 
       - name: Upload visual regression artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pdf-visual-regression
