@@ -116,7 +116,9 @@
         return words;
     }
     function styledTextLines(ctx,segments,x,y,width,regular,strong){
-        const spaceW=measure(ctx,' ',regular);
+        // `measure()` normalizes/trim text, so it intentionally reports zero
+        // for a standalone space. Inline wrapping needs the physical advance.
+        const spaceW=ctx.measureText(' ',regular.font,regular.size);
         const words=styledWords(ctx,segments,regular,strong);
         const lines=[];
         let line=[],lineW=0;

@@ -180,7 +180,9 @@
 
     function wrapInline(ctx, segments, width, spaceStyle) {
         const words = inlineWords(ctx, segments);
-        const spaceWidth = summaryMeasure(ctx, ' ', spaceStyle);
+        // summaryMeasure normalizes text; ask the render context directly for
+        // whitespace advance so line fit includes every inter-word gap.
+        const spaceWidth = ctx.measureText(' ', spaceStyle.font, spaceStyle.size);
         const lines = [];
         let line = [];
         let lineWidth = 0;
