@@ -166,7 +166,9 @@
             let tx=x;
             runs.forEach(run=>{
                 ctx.text(run.text,{x:tx,y:y+lineIndex*regular.lineHeight,size:run.style.size,font:run.style.font,color:run.style.color});
-                tx+=measure(ctx,run.text,run.style);
+                // Preserve trailing separator advance between differently
+                // styled runs; the generic measure() trims whitespace.
+                tx+=ctx.measureText(run.text,run.style.font,run.style.size);
             });
         });
         return lines.length*regular.lineHeight;
