@@ -119,11 +119,26 @@
         // `measure()` normalizes/trim text, so it intentionally reports zero
         // for a standalone space. Inline wrapping needs the physical advance.
         const spaceW=ctx.measureText(' ',regular.font,regular.size);
-        const words=styledWords(ctx,segments,regular,strong);
+        const rawWords=styledWords(ctx,segments,regular,strong);
+        const partWidth=part=>/^\s+$/.test(part.text)
+            ? ctx.measureText(part.text,part.style.font,part.style.size)
+            : measure(ctx,part.text,part.style);
+        const wordWidth=parts=>parts.reduce((sum,part)=>sum+partWidth(part),0);
+        const isLtrWord=parts=>{
+            const value=parts.map(part=>part.text).join('');
+            return /[A-Za-z]/.test(value)&&!/[\u0600-\u06ff]/.test(value);
+        };
+        const words=[];
+        rawWords.forEach(parts=>{
+            const previous=words[words.length-1];
+            if(previous&&isLtrWord(previous)&&isLtrWord(parts)&&wordWidth(previous)+spaceW+wordWidth(parts)<=width){
+                previous.push({text:' ',style:regular},...parts);
+            }else words.push(parts.slice());
+        });
         const lines=[];
         let line=[],lineW=0;
         words.forEach(parts=>{
-            const wordW=parts.reduce((sum,part)=>sum+measure(ctx,part.text,part.style),0);
+            const wordW=wordWidth(parts);
             const separator=line.length?spaceW:0;
             if(line.length&&lineW+separator+wordW>width){lines.push(line);line=[];lineW=0;}
             line.push(parts);
