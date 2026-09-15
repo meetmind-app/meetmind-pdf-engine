@@ -81,4 +81,16 @@ assert.strictEqual(impactBody?.font, 'regular', 'Risk body must remain regular.'
 assert.strictEqual(impact?.y, impactBody?.y, 'Impact label must continue inline without a forced line break.');
 assert.ok(calls.some(call => call.type === 'text' && call.value.includes('Google Calendar')), 'Mixed-style risk rendering must preserve searchable phrases.');
 
+calls.length = 0;
+report.language = 'fa';
+host.MeetMindRenderer.render({
+  pageCount: 1,
+  pages: [{ number: 1, density: 'regular', blocks: [
+    { id: 'risks', geometry: { x: 10, y: 10, width: 500, height: 120 } }
+  ] }]
+}, { getPageContext: pageContext, finalize() {} });
+const rtlRiskLine = calls.find(call => call.type === 'text' && call.value.includes('Google Calendar'));
+assert.strictEqual(rtlRiskLine?.font, 'regular', 'RTL risk sentences must remain a single bidi-safe regular run.');
+assert.ok(rtlRiskLine?.value.includes('Маржа снизится.'), 'RTL fallback must retain inline structured values.');
+
 console.log('PDF Design Polish v2 contract passed.');

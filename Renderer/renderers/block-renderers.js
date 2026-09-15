@@ -140,12 +140,17 @@
                 part.style.size===firstStyle.size&&
                 part.style.color===firstStyle.color
             );
-            if(uniform){
+            const rtlParagraph=['ar','fa'].includes(lang(ctx));
+            if(uniform||rtlParagraph){
                 // Keep unstyled lines as one logical text operation. Besides
                 // producing a useful searchable text layer, this lets the
                 // bidi/OpenType pipeline lay out the complete RTL sentence.
+                // Mixed font runs cannot be independently positioned in an
+                // RTL paragraph without re-running UAX #9 across the full
+                // line, so RTL deliberately keeps one regular-weight run.
+                const lineStyle=rtlParagraph?regular:firstStyle;
                 ctx.text(lineParts.map(part=>part.text).join(''),{
-                    x,y:y+lineIndex*regular.lineHeight,size:firstStyle.size,font:firstStyle.font,color:firstStyle.color
+                    x,y:y+lineIndex*regular.lineHeight,size:lineStyle.size,font:lineStyle.font,color:lineStyle.color
                 });
                 return;
             }
