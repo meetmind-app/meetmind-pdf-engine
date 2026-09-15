@@ -98,6 +98,48 @@
         });
         return lines.length*s.lineHeight;
     }
+    function styledWords(ctx,segments,regular,strong){
+        const words=[];
+        let current=[];
+        (Array.isArray(segments)?segments:[]).forEach(segment=>{
+            const segmentStyle=segment?.strong?strong:regular;
+            String(segment?.text??'').split(/(\s+)/).forEach(part=>{
+                if(!part)return;
+                if(/^\s+$/.test(part)){
+                    if(current.length){words.push(current);current=[];}
+                    return;
+                }
+                current.push({text:part,style:segmentStyle});
+            });
+        });
+        if(current.length)words.push(current);
+        return words;
+    }
+    function styledTextLines(ctx,segments,x,y,width,regular,strong){
+        const spaceW=measure(ctx,' ',regular);
+        const words=styledWords(ctx,segments,regular,strong);
+        const lines=[];
+        let line=[],lineW=0;
+        words.forEach(parts=>{
+            const wordW=parts.reduce((sum,part)=>sum+measure(ctx,part.text,part.style),0);
+            const separator=line.length?spaceW:0;
+            if(line.length&&lineW+separator+wordW>width){lines.push(line);line=[];lineW=0;}
+            line.push(parts);
+            lineW+=(line.length>1?spaceW:0)+wordW;
+        });
+        if(line.length)lines.push(line);
+        lines.forEach((lineWords,lineIndex)=>{
+            let tx=x;
+            lineWords.forEach((parts,wordIndex)=>{
+                if(wordIndex)tx+=spaceW;
+                parts.forEach(part=>{
+                    ctx.text(part.text,{x:tx,y:y+lineIndex*regular.lineHeight,size:part.style.size,font:part.style.font,color:part.style.color});
+                    tx+=measure(ctx,part.text,part.style);
+                });
+            });
+        });
+        return lines.length*regular.lineHeight;
+    }
     function card(ctx,g){
         ctx.rect({x:g.x,y:g.y,width:g.width,height:g.height,fill:'cardBg',stroke:'borderDefault',borderWidth:.5,radius:4});
     }
@@ -369,7 +411,11 @@
             ctx.text(n,{x:bx-nw/2,y:y+1.2,size:badge.size,font:badge.font,color:'white'});
             const tx=g.x+sp.padX+13, tw=g.width-sp.padX*2-13;
             y+=textLines(ctx,item.title,tx,y,tw,strong);
-            if(item.description)y+=textLines(ctx,item.description,tx,y,tw,body);
+            const segments=raw&&typeof raw==='object'&&!Array.isArray(raw)
+                ? raw._loreviDescriptionSegments
+                : null;
+            if(Array.isArray(segments)&&segments.length)y+=styledTextLines(ctx,segments,tx,y,tw,body,strong);
+            else if(item.description)y+=textLines(ctx,item.description,tx,y,tw,body);
             y+=sp.bulletGap;
         });
     }
@@ -578,7 +624,7 @@
 
 
     host.blockRenderers=Object.freeze({
-        version:'1.7.0-design-icon-system-v2',
+        version:'1.8.0-pdf-design-polish-v2',
         header:renderHeader,
         stats:renderStats,
         meetingStats:renderStats,

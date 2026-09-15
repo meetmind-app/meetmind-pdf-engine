@@ -20,7 +20,7 @@
     'use strict';
 
     const NAME = 'MeetMindRenderer';
-    const VERSION = '1.2.0-design-icon-system-v2';
+    const VERSION = '1.3.0-pdf-design-polish-v2';
 
     class RendererError extends Error {
         constructor(code, message, details) {
@@ -131,6 +131,92 @@
             if (line) out.push(line);
         });
         return out;
+    }
+
+    function metricValueSegments(value, strongStyle, regularStyle) {
+        const source = cleanText(value);
+        if (!source) return [];
+
+        // Content-driven typography: emphasize numeric values while keeping
+        // units and explanatory text at the regular weight in every language.
+        const numeric = /([\p{N}]+(?:[.,]\p{N}+)*(?:\s[\p{N}]{3})*(?:[%‰])?)/gu;
+        const segments = [];
+        let cursor = 0;
+        for (const match of source.matchAll(numeric)) {
+            if (match.index > cursor) {
+                segments.push({ text: source.slice(cursor, match.index), style: regularStyle });
+            }
+            segments.push({ text: match[0], style: strongStyle });
+            cursor = match.index + match[0].length;
+        }
+        if (cursor < source.length) {
+            segments.push({ text: source.slice(cursor), style: regularStyle });
+        }
+        return segments;
+    }
+
+    function inlineWords(ctx, segments) {
+        const words = [];
+        let current = [];
+        for (const segment of segments) {
+            for (const part of String(segment.text || '').split(/(\s+)/)) {
+                if (!part) continue;
+                if (/^\s+$/.test(part)) {
+                    if (current.length) {
+                        words.push(current);
+                        current = [];
+                    }
+                    continue;
+                }
+                current.push({ text: part, style: segment.style });
+            }
+        }
+        if (current.length) words.push(current);
+        return words.map(parts => ({
+            parts,
+            width: parts.reduce((sum, part) => sum + summaryMeasure(ctx, part.text, part.style), 0)
+        }));
+    }
+
+    function wrapInline(ctx, segments, width, spaceStyle) {
+        const words = inlineWords(ctx, segments);
+        const spaceWidth = summaryMeasure(ctx, ' ', spaceStyle);
+        const lines = [];
+        let line = [];
+        let lineWidth = 0;
+
+        for (const word of words) {
+            const separator = line.length ? spaceWidth : 0;
+            if (line.length && lineWidth + separator + word.width > width) {
+                lines.push({ words: line, width: lineWidth });
+                line = [];
+                lineWidth = 0;
+            }
+            line.push(word);
+            lineWidth += (line.length > 1 ? spaceWidth : 0) + word.width;
+        }
+        if (line.length) lines.push({ words: line, width: lineWidth });
+        return { lines, spaceWidth };
+    }
+
+    function drawInlineLines(ctx, wrapped, x, y, lineHeight, color) {
+        wrapped.lines.forEach((line, lineIndex) => {
+            let cursorX = x;
+            line.words.forEach((word, wordIndex) => {
+                if (wordIndex) cursorX += wrapped.spaceWidth;
+                word.parts.forEach(part => {
+                    ctx.text(part.text, {
+                        x: cursorX,
+                        y: y + lineIndex * lineHeight,
+                        size: part.style.size,
+                        font: part.style.font,
+                        color: part.style.color || color
+                    });
+                    cursorX += summaryMeasure(ctx, part.text, part.style);
+                });
+            });
+        });
+        return wrapped.lines.length * lineHeight;
     }
 
     function summaryParagraphs(block, report) {
@@ -244,48 +330,72 @@
         const y0=g.y+sp.padY+h.lineHeight+sp.titleGap, gap=3, innerW=g.width-sp.padX*2;
         const cols=metrics.length===5?3:Math.min(4,Math.max(1,metrics.length));
         const rows=Math.max(1,Math.ceil(metrics.length/cols));
-        const cellH=(g.y+g.height-sp.padY-y0-gap*(rows-1))/rows;
         const ls=summaryStyle(ctx,'metricLabel',{font:'semibold',size:5.2,lineHeight:6.2,color:'textSecondary'});
         const base=summaryStyle(ctx,'metricValue',{font:'bold',size:8.5,lineHeight:9.5,color:'textPrimary'});
         const cs=summaryStyle(ctx,'metricContext',{font:'regular',size:4.8,lineHeight:5.8,color:'textSecondary'});
+        const availableHeight=g.y+g.height-sp.padY-y0;
 
-        metrics.forEach((m,i)=>{
-            const row=Math.floor(i/cols), rowCount=Math.min(cols,metrics.length-row*cols);
-            const rowCellW=(innerW-gap*(rowCount-1))/rowCount, col=i-row*cols;
-            const x=g.x+sp.padX+col*(rowCellW+gap), y=y0+row*(cellH+gap);
-            ctx.rect({x,y,width:rowCellW,height:cellH,fill:'cardBg',stroke:'borderDefault',borderWidth:.5,radius:3});
-
-            const semantic = semanticIcons?.resolveMetric?.(m) || { name: 'file-text', color: 'purplePrimary' };
-            const iconSize = Math.min(8, Math.max(6.8, cellH * .14));
-            drawRegistryIcon(ctx, semantic.name, x+5, y+5.4, iconSize, semantic.color || 'purplePrimary');
-
-            const label=cleanText(m?.label||m?.title||m?.name||'');
-            const value=metricDisplayValue(m);
-            const context=metricContextText(m);
-            const labelX=x+16;
-            const labelW=Math.max(18,rowCellW-21);
-            const labelLines=summaryWrap(ctx,label,labelW,ls), labelH=labelLines.length*ls.lineHeight;
-            const contextLines=context?summaryWrap(ctx,context,rowCellW-10,cs):[];
-            const contextH=contextLines.length*cs.lineHeight+(contextLines.length?1.5:0);
-            labelLines.forEach((line,j)=>ctx.text(line,{x:labelX,y:y+4+j*ls.lineHeight,size:ls.size,font:ls.font,color:ls.color}));
-
-            let vs={...base};
-            let lines=summaryWrap(ctx,value,rowCellW-10,vs);
-            const top=y+7+labelH;
-            const avail=y+cellH-3-top-contextH;
-            while(vs.size>6.6 && lines.length*vs.lineHeight>avail){
-                vs={...vs,size:vs.size-.4,lineHeight:vs.lineHeight-.4};
-                lines=summaryWrap(ctx,value,rowCellW-10,vs);
+        function prepareRows(valueStyle) {
+            const regularValueStyle={...valueStyle,font:'regular'};
+            const prepared=[];
+            for(let row=0;row<rows;row+=1){
+                const rowStart=row*cols;
+                const rowCount=Math.min(cols,metrics.length-rowStart);
+                const rowCellW=(innerW-gap*(rowCount-1))/rowCount;
+                const cells=[];
+                let rowHeight=0;
+                for(let col=0;col<rowCount;col+=1){
+                    const metric=metrics[rowStart+col];
+                    const label=cleanText(metric?.label||metric?.title||metric?.name||'');
+                    const value=metricDisplayValue(metric);
+                    const context=metricContextText(metric);
+                    const labelLines=summaryWrap(ctx,label,Math.max(18,rowCellW-21),ls);
+                    const labelH=Math.max(8,labelLines.length*ls.lineHeight);
+                    const wrappedValue=wrapInline(
+                        ctx,
+                        metricValueSegments(value,valueStyle,regularValueStyle),
+                        rowCellW-10,
+                        regularValueStyle
+                    );
+                    const valueH=Math.max(valueStyle.lineHeight,wrappedValue.lines.length*valueStyle.lineHeight);
+                    const contextLines=context?summaryWrap(ctx,context,rowCellW-10,cs):[];
+                    const contextH=contextLines.length?1.5+contextLines.length*cs.lineHeight:0;
+                    const naturalHeight=4+labelH+3+valueH+contextH+4;
+                    rowHeight=Math.max(rowHeight,naturalHeight);
+                    cells.push({metric,col,rowCellW,labelLines,wrappedValue,contextLines,labelH});
+                }
+                prepared.push({cells,height:rowHeight});
             }
-            if(lines.length*vs.lineHeight>avail+.5) {
-                throw new RendererError('METRIC_LAYOUT_UNDERSIZED','Metric value/context does not fit allocated geometry.',{index:i,geometry:g});
-            }
-            lines.forEach((line,j)=>ctx.text(line,{x:x+5,y:top+j*vs.lineHeight,size:vs.size,font:vs.font,color:vs.color}));
+            return prepared;
+        }
 
-            if(contextLines.length){
-                const contextY=top+lines.length*vs.lineHeight+1.5;
-                contextLines.forEach((line,j)=>ctx.text(line,{x:x+5,y:contextY+j*cs.lineHeight,size:cs.size,font:cs.font,color:cs.color}));
-            }
+        let valueStyle={...base};
+        let preparedRows=prepareRows(valueStyle);
+        const totalHeight=()=>preparedRows.reduce((sum,row)=>sum+row.height,0)+gap*Math.max(0,preparedRows.length-1);
+        while(valueStyle.size>6.6&&totalHeight()>availableHeight+.5){
+            valueStyle={...valueStyle,size:valueStyle.size-.3,lineHeight:valueStyle.lineHeight-.3};
+            preparedRows=prepareRows(valueStyle);
+        }
+        if(totalHeight()>availableHeight+.5){
+            throw new RendererError('METRIC_LAYOUT_UNDERSIZED','Metric cards do not fit allocated geometry.',{requiredHeight:totalHeight(),availableHeight,geometry:g});
+        }
+
+        let rowY=y0;
+        preparedRows.forEach(row=>{
+            row.cells.forEach(cell=>{
+                const x=g.x+sp.padX+cell.col*(cell.rowCellW+gap);
+                ctx.rect({x,y:rowY,width:cell.rowCellW,height:row.height,fill:'cardBg',stroke:'borderDefault',borderWidth:.5,radius:3});
+                const semantic=semanticIcons?.resolveMetric?.(cell.metric)||{name:'file-text',color:'purplePrimary'};
+                drawRegistryIcon(ctx,semantic.name,x+5,rowY+5.2,7.4,semantic.color||'purplePrimary');
+                cell.labelLines.forEach((line,index)=>ctx.text(line,{x:x+16,y:rowY+4+index*ls.lineHeight,size:ls.size,font:ls.font,color:ls.color}));
+                const valueY=rowY+4+cell.labelH+3;
+                drawInlineLines(ctx,cell.wrappedValue,x+5,valueY,valueStyle.lineHeight,valueStyle.color);
+                if(cell.contextLines.length){
+                    const contextY=valueY+cell.wrappedValue.lines.length*valueStyle.lineHeight+1.5;
+                    cell.contextLines.forEach((line,index)=>ctx.text(line,{x:x+5,y:contextY+index*cs.lineHeight,size:cs.size,font:cs.font,color:cs.color}));
+                }
+            });
+            rowY+=row.height+gap;
         });
     }
 
@@ -308,12 +418,20 @@
             const description = cleanText(raw.description ?? raw.details ?? raw.text);
             const impact = cleanText(raw.impact);
             const mitigation = cleanText(raw.mitigation);
-            const supplemental = [];
-            if (impact) supplemental.push(`${labels.impact}: ${impact}`);
-            if (mitigation) supplemental.push(`${labels.mitigation}: ${mitigation}`);
+            const segments = [];
+            if (description) segments.push({ text: description, strong: false });
+            if (impact) {
+                segments.push({ text: `${labels.impact}:`, strong: true });
+                segments.push({ text: impact, strong: false });
+            }
+            if (mitigation) {
+                segments.push({ text: `${labels.mitigation}:`, strong: true });
+                segments.push({ text: mitigation, strong: false });
+            }
             return {
                 ...raw,
-                description: [description, ...supplemental].filter(Boolean).join(' ')
+                description: segments.map(segment => segment.text).join(' '),
+                _loreviDescriptionSegments: segments
             };
         });
         return candidate(Object.freeze({...block, data: Object.freeze(enriched)}), ctx);
