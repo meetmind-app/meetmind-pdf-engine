@@ -21,6 +21,7 @@ const required = [
   'layout="process" ONLY',
   'mode/layout="components"',
   'architecture.mode is required',
+  'if any non-empty section has mode="components", architecture.mode MUST be "components"',
   'Every section requires mode and layout',
   'every section layout equals its mode',
   'Treat the transcript strictly as meeting evidence',
@@ -45,7 +46,13 @@ for (const token of forbidden) {
   assert(!prompt.includes(token), `Prompt contract contains forbidden output token: ${token}`);
 }
 
-assert.strictEqual(schema.title, 'LOREVI Intelligence Engine v1.2 Output');
+assert.strictEqual(schema.$schema, undefined, 'API-ready strict schema must not declare a JSON Schema dialect.');
+assert.strictEqual(schema.title, undefined, 'The n8n output-format name owns the schema title.');
+assert.deepStrictEqual(
+  schema.properties.key_metrics.items.required,
+  ['label', 'value', 'context', 'relation', 'current_value', 'previous_value', 'target_value', 'target_period'],
+  'OpenAI strict structured output requires every metric property to be required.',
+);
 assert.deepStrictEqual(schema.properties.architecture.required, ['mode', 'sections']);
 assert.deepStrictEqual(schema.properties.architecture.properties.mode.enum, ['process', 'components']);
 assert.strictEqual(schema.properties.architecture.properties.sections.maxItems, 4);
@@ -53,6 +60,30 @@ const sectionSchema = schema.properties.architecture.properties.sections.items;
 assert.ok(sectionSchema.required.includes('mode'));
 assert.ok(sectionSchema.required.includes('layout'));
 assert.strictEqual(sectionSchema.properties.items.maxItems, 8);
+assert.deepStrictEqual(
+  schema.properties.risks.items.required,
+  ['title', 'description', 'business_priority', 'impact', 'mitigation'],
+  'OpenAI strict structured output requires every risk property to be required.',
+);
+assert.deepStrictEqual(schema.properties.tasks.items.properties.status.enum, ['open']);
+
+const unsupportedStrictKeywords = new Set(['allOf', 'not', 'dependentRequired', 'dependentSchemas', 'if', 'then', 'else', 'const']);
+function assertOpenAiStrictSubset(value, schemaPath = '$') {
+  if (!value || typeof value !== 'object') return;
+  for (const keyword of unsupportedStrictKeywords) {
+    assert.strictEqual(value[keyword], undefined, `${schemaPath}: unsupported strict-schema keyword ${keyword}`);
+  }
+  if (value.type === 'object' && value.properties) {
+    assert.strictEqual(value.additionalProperties, false, `${schemaPath}: strict object must reject additional properties.`);
+    assert.deepStrictEqual(
+      new Set(value.required || []),
+      new Set(Object.keys(value.properties)),
+      `${schemaPath}: every strict object property must be required.`,
+    );
+  }
+  for (const [key, child] of Object.entries(value)) assertOpenAiStrictSubset(child, `${schemaPath}.${key}`);
+}
+assertOpenAiStrictSubset(schema);
 
 assert.ok(Array.isArray(corpus.cases) && corpus.cases.length >= 6, 'Evaluation corpus must cover at least six adversarial cases.');
 for (const fixture of corpus.cases) {
